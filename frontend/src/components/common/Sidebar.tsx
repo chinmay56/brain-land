@@ -43,6 +43,7 @@ export const Sidebar: React.FC = () => {
   const officerNav: NavItem[] = [
     { name: 'Verification Overview', href: '/officer/dashboard', icon: LayoutDashboard },
     { name: 'Verification Queue', href: '/officer/verification', icon: FileText, count: '128' },
+    { name: 'Verified Documents History', href: '/officer/history', icon: FileCheck2 },
     { name: 'Cadastral Conflicts', href: '/officer/conflicts', icon: AlertCircle, count: '12' },
     { name: 'GIS Parcel Map', href: '/officer/gis', icon: MapPin },
     { name: 'Provenance & Audit', href: '/officer/audit', icon: History },
