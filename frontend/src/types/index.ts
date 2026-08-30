@@ -20,7 +20,10 @@ export type RecordStatus =
   | 'DRAFT'
   | 'PROCESSING'
   | 'VALIDATED'
+  | 'PENDING_VERIFICATION'
   | 'UNDER_VERIFICATION'
+  | 'IN_REVIEW'
+  | 'FLAGGED'
   | 'VERIFIED'
   | 'REJECTED'
   | 'CORRECTION_REQUESTED';
@@ -31,6 +34,7 @@ export interface FieldConfidence {
   value: string;
   confidence: number; // 0 to 1
   isFlagged?: boolean;
+  sourceDoc?: string;
 }
 
 export interface ValidationFlag {
@@ -41,11 +45,13 @@ export interface ValidationFlag {
   suggestedAction?: string;
 }
 
+// Complete 12 SIH Problem Statement Fields
 export interface LandRecord {
   id: string;
   applicationNo: string;
   documentType: string;
   ownerName: FieldConfidence;
+  coOwners?: string[];
   surveyNumber: FieldConfidence;
   khasraNumber?: FieldConfidence;
   khataNumber?: FieldConfidence;
@@ -56,7 +62,9 @@ export interface LandRecord {
   district: FieldConfidence;
   state: string;
   landClassification?: FieldConfidence;
+  ownershipDetails?: FieldConfidence;
   mutationNumber?: FieldConfidence;
+  registrationInfo?: FieldConfidence;
   overallConfidence: number;
   status: RecordStatus;
   submissionDate: string;
@@ -66,4 +74,5 @@ export interface LandRecord {
   validationFlags: ValidationFlag[];
   documentUrl?: string;
   documentPages?: number;
+  supportingDocuments?: string[];
 }

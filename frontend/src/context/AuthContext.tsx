@@ -191,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (signUpRes.data.user) {
-          data = { user: signUpRes.data.user, session: signUpRes.data.session };
+          data = { user: signUpRes.data.user, session: signUpRes.data.session as any };
           error = null;
         }
       }

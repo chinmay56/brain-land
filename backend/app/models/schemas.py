@@ -25,6 +25,7 @@ class FieldConfidence(BaseModel):
     value: str
     confidence: float = Field(..., ge=0.0, le=1.0)
     is_flagged: bool = False
+    source_doc: Optional[str] = None
 
 class ValidationFlag(BaseModel):
     id: str
@@ -33,9 +34,11 @@ class ValidationFlag(BaseModel):
     message: str
     suggested_action: Optional[str] = None
 
+# The 12 SIH Problem Statement Fields
 class LandRecordBase(BaseModel):
-    document_type: str
+    document_type: str = "7/12 Extract (Record of Rights)"
     owner_name: FieldConfidence
+    co_owners: Optional[List[str]] = []
     survey_number: FieldConfidence
     khasra_number: Optional[FieldConfidence] = None
     khata_number: Optional[FieldConfidence] = None
@@ -46,7 +49,9 @@ class LandRecordBase(BaseModel):
     district: FieldConfidence
     state: str = "Maharashtra"
     land_classification: Optional[FieldConfidence] = None
+    ownership_details: Optional[FieldConfidence] = None
     mutation_number: Optional[FieldConfidence] = None
+    registration_info: Optional[FieldConfidence] = None
 
 class LandRecordCreate(LandRecordBase):
     pass
@@ -63,6 +68,7 @@ class LandRecordResponse(LandRecordBase):
     validation_flags: List[ValidationFlag] = []
     document_url: Optional[str] = None
     document_pages: int = 1
+    supporting_documents: List[Dict[str, Any]] = []
 
 class OfficerVerificationAction(BaseModel):
     record_id: str
