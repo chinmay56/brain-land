@@ -89,3 +89,9 @@ async def get_land_record(record_id: str):
     if not record:
         raise HTTPException(status_code=404, detail="Land record not found")
     return record
+
+@router.post("", response_model=LandRecordResponse)
+async def create_land_record(record: LandRecordResponse):
+    MOCK_RECORDS.insert(0, record.dict())
+    return record
+

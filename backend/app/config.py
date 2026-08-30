@@ -5,16 +5,22 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Intelligent Land Record Digitization & Validation API"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    PORT: int = 8000
+    HOST: str = "0.0.0.0"
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    CORS_ORIGINS: str = '["http://localhost:3000"]'
     
-    # Sarvam AI Vision Model
+    # Sarvam AI Document Intelligence & Vision
     SARVAM_API_KEY: str = ""
-    SARVAM_API_URL: str = "https://api.sarvam.ai/v1/vision"
+    SARVAM_BASE_URL: str = "https://api.sarvam.ai"
+    SARVAM_DIGITISE_URL: str = "https://api.sarvam.ai/doc-ai/v1/job/digitise"
+    SARVAM_EXTRACT_URL: str = "https://api.sarvam.ai/doc-ai/v1/job/extract"
+    SARVAM_API_URL: str = "https://api.sarvam.ai/doc-ai/v1/job/digitise"
+    SARVAM_OCR_URL: str = "https://api.sarvam.ai/doc-ai/v1/job/digitise"
     
     # Supabase Credentials
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_ANON_KEY: str = ""
 
     class Config:
         env_file = ".env"
@@ -25,3 +31,4 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 settings = Settings()
+
