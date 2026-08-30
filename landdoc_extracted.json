@@ -1,0 +1,30 @@
+{
+  "_source": "Registered sale deed (खरेदीखत) doc no. 3494/2015, Joint Sub-Registrar Jalgaon-1, dated 16/09/2015. Fields transcribed from pages 3-5 of landdoc.pdf. This is what the OCR stage should output for this document.",
+  "documents": [
+    {
+      "survey_no": "466/1 Plot 23",
+      "village": "Mehrun",
+      "tehsil": "Jalgaon",
+      "district": "Jalgaon",
+      "state": "Maharashtra",
+      "document_id": "SD-3494/2015-JLG1",
+      "document_type": "Sale Deed (खरेदीखत) — flat purchase, Rohini Residency",
+      "owner_name": "Chandan Ramchandra Wani",
+      "area_value": 281.25,
+      "area_unit": "sqm",
+      "boundaries": {
+        "east": "Plot No. 22",
+        "west": "Plot No. 24",
+        "north": "Plot No. 20",
+        "south": "Road & passage"
+      },
+      "village_map_sheet_no": "Zone 7/293, Jalgaon Municipal Corporation",
+      "parent_survey_no": "466/1"
+    }
+  ],
+  "_notes": {
+    "flat_unit": "Flat No. 201, 2nd floor west, built-up 46.64 sqm — a unit INSIDE the building; not separately plottable on a 2D cadastre. The plottable entity is the plot.",
+    "na_order": "Land converted non-agricultural vide order RB/SNA/SR/64/82 dated 26/08/1993",
+    "two_areas_trap": "This deed declares TWO areas: plot 281.25 sqm and flat 46.64 sqm. An extraction schema with a single 'area' field will grab one of them unpredictably."
+  }
+}
