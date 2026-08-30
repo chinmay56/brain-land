@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "name": "hadapsar_village_boundary",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "village_name": "Hadapsar",
+        "village_name_mr": "हडपसर",
+        "lgd_village_code": "556489",
+        "tehsil": "Haveli",
+        "lgd_tehsil_code": "4184",
+        "district": "Pune",
+        "lgd_district_code": "521",
+        "state": "Maharashtra",
+        "lgd_state_code": "27",
+        "cadastral_sheet": "14"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.921,
+              18.505
+            ],
+            [
+              73.92763103,
+              18.505
+            ],
+            [
+              73.92763103,
+              18.50952186
+            ],
+            [
+              73.921,
+              18.50952186
+            ],
+            [
+              73.921,
+              18.505
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

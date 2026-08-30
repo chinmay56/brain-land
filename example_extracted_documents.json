@@ -1,0 +1,424 @@
+{
+  "documents": [
+    {
+      "survey_no": "201/1",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-1",
+      "owner_name": "Basavaraj Shivappa Gowda",
+      "area_value": 104.773,
+      "area_unit": "guntha",
+      "boundaries": {
+        "east": "Survey No. 201/2",
+        "north": "Survey No. 201/4",
+        "west": "Village road",
+        "south": "Kaluva"
+      },
+      "document_type": "Resurvey record (DGPS) + 7/12 extract",
+      "coordinates": {
+        "points": [
+          [
+            76.6394,
+            12.2958
+          ],
+          [
+            76.64050311,
+            12.29579339
+          ],
+          [
+            76.64060008,
+            12.29660639
+          ],
+          [
+            76.63940448,
+            12.29652316
+          ]
+        ],
+        "crs": "WGS84",
+        "order": "xy"
+      }
+    },
+    {
+      "survey_no": "201/2",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-2",
+      "owner_name": "Lakshmi Devamma",
+      "area_value": 101.066,
+      "area_unit": "guntha",
+      "boundaries": {
+        "east": "Survey No. 201/3",
+        "west": "Survey No. 201/1",
+        "north": "Survey No. 201/5",
+        "south": "Kaluva"
+      },
+      "document_type": "Field Measurement Book + 7/12 extract",
+      "traverse": {
+        "legs": [
+          {
+            "bearing": "N85°14'10.9\"E",
+            "distance": 598.58,
+            "unit": "links",
+            "from_station": "P1",
+            "to_station": "P2"
+          },
+          {
+            "bearing": "N3°21'59.3\"E",
+            "distance": 423.26,
+            "unit": "links",
+            "from_station": "P2",
+            "to_station": "P3"
+          },
+          {
+            "bearing": "S87°30'37.6\"W",
+            "distance": 572.2,
+            "unit": "links",
+            "from_station": "P3",
+            "to_station": "P4"
+          },
+          {
+            "bearing": "S6°20'24.7\"W",
+            "distance": 450.14,
+            "unit": "links",
+            "from_station": "P4",
+            "to_station": "P1"
+          }
+        ],
+        "distance_unit": "links",
+        "adjustment": "bowditch"
+      }
+    },
+    {
+      "survey_no": "201/3",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-3",
+      "owner_name": "Mahadeva Naik",
+      "area_value": 93.9,
+      "area_unit": "guntha",
+      "boundaries": {
+        "west": "Survey No. 201/2",
+        "north": "Survey No. 201/6",
+        "east": "Village road",
+        "south": "Kaluva"
+      },
+      "document_type": "Field Measurement Book + 7/12 extract",
+      "traverse": {
+        "legs": [
+          {
+            "bearing": "S84°17'21.9\"E",
+            "distance": 499.58,
+            "unit": "links",
+            "from_station": "P1",
+            "to_station": "P2"
+          },
+          {
+            "bearing": "N5°42'38.1\"E",
+            "distance": 499.58,
+            "unit": "links",
+            "from_station": "P2",
+            "to_station": "P3"
+          },
+          {
+            "bearing": "S87°16'25.3\"W",
+            "distance": 522.54,
+            "unit": "links",
+            "from_station": "P3",
+            "to_station": "P4"
+          },
+          {
+            "bearing": "S3°21'59.3\"W",
+            "distance": 423.26,
+            "unit": "links",
+            "from_station": "P4",
+            "to_station": "P1"
+          }
+        ],
+        "distance_unit": "links",
+        "adjustment": "bowditch"
+      }
+    },
+    {
+      "survey_no": "201/4",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-4",
+      "owner_name": "Chennamma Rangappa",
+      "area_value": 121.082,
+      "area_unit": "guntha",
+      "boundaries": {
+        "east": "Survey No. 201/5",
+        "south": "Survey No. 201/1",
+        "north": "Survey No. 201/7",
+        "west": "Village road"
+      },
+      "document_type": "Field Measurement Book + 7/12 extract",
+      "traverse": {
+        "legs": [
+          {
+            "bearing": "N85°36'04.7\"E",
+            "distance": 648.14,
+            "unit": "links",
+            "from_station": "P1",
+            "to_station": "P2"
+          },
+          {
+            "bearing": "N5°42'38.1\"W",
+            "distance": 499.58,
+            "unit": "links",
+            "from_station": "P2",
+            "to_station": "P3"
+          },
+          {
+            "bearing": "S82°52'29.9\"W",
+            "distance": 601.16,
+            "unit": "links",
+            "from_station": "P3",
+            "to_station": "P4"
+          },
+          {
+            "bearing": "S",
+            "distance": 472.24,
+            "unit": "links",
+            "from_station": "P4",
+            "to_station": "P1"
+          }
+        ],
+        "distance_unit": "links",
+        "adjustment": "bowditch"
+      }
+    },
+    {
+      "survey_no": "201/5",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-5",
+      "owner_name": "Siddaraju H M",
+      "area_value": 124.294,
+      "area_unit": "guntha",
+      "boundaries": {
+        "east": "Survey No. 201/6",
+        "west": "Survey No. 201/4",
+        "south": "Survey No. 201/2",
+        "north": "Survey No. 201/8"
+      },
+      "document_type": "Tippan (chain and offset) + 7/12 extract",
+      "chain_offset": {
+        "base_length": 572.2,
+        "offsets": [
+          {
+            "chainage": 0.0,
+            "offset": 0.0,
+            "side": "L",
+            "seq": 0,
+            "label": "A"
+          },
+          {
+            "chainage": 572.2,
+            "offset": 0.0,
+            "side": "L",
+            "seq": 1,
+            "label": "B"
+          },
+          {
+            "chainage": 619.71,
+            "offset": 520.38,
+            "side": "L",
+            "seq": 2,
+            "label": "C"
+          },
+          {
+            "chainage": -28.07,
+            "offset": 498.79,
+            "side": "L",
+            "seq": 3,
+            "label": "D"
+          }
+        ],
+        "unit": "links"
+      }
+    },
+    {
+      "survey_no": "201/6",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-6",
+      "owner_name": "Nanjundaswamy K",
+      "area_value": 108.726,
+      "area_unit": "guntha",
+      "boundaries": {
+        "west": "Survey No. 201/5",
+        "south": "Survey No. 201/3",
+        "east": "Village road",
+        "north": "Government land"
+      },
+      "document_type": "Field Measurement Book + 7/12 extract",
+      "traverse": {
+        "legs": [
+          {
+            "bearing": "N87°16'25.3\"E",
+            "distance": 522.54,
+            "unit": "links",
+            "from_station": "P1",
+            "to_station": "P2"
+          },
+          {
+            "bearing": "N2°43'34.7\"E",
+            "distance": 522.54,
+            "unit": "links",
+            "from_station": "P2",
+            "to_station": "P3"
+          },
+          {
+            "bearing": "S87°16'25.3\"W",
+            "distance": 522.54,
+            "unit": "links",
+            "from_station": "P3",
+            "to_station": "P4"
+          },
+          {
+            "bearing": "S2°43'34.7\"W",
+            "distance": 522.54,
+            "unit": "links",
+            "from_station": "P4",
+            "to_station": "P1"
+          }
+        ],
+        "distance_unit": "links",
+        "adjustment": "bowditch"
+      }
+    },
+    {
+      "survey_no": "201/7",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-7",
+      "owner_name": "Puttaraju Bore Gowda",
+      "area_value": 107.738,
+      "area_unit": "guntha",
+      "boundaries": {
+        "east": "Survey No. 201/8",
+        "south": "Survey No. 201/4",
+        "west": "Village road",
+        "north": "Government land"
+      },
+      "document_type": "Field Measurement Book + 7/12 extract",
+      "traverse": {
+        "legs": [
+          {
+            "bearing": "N82°52'29.9\"E",
+            "distance": 601.16,
+            "unit": "links",
+            "from_station": "P1",
+            "to_station": "P2"
+          },
+          {
+            "bearing": "N3°10'47.4\"W",
+            "distance": 448.08,
+            "unit": "links",
+            "from_station": "P2",
+            "to_station": "P3"
+          },
+          {
+            "bearing": "S85°01'48.9\"W",
+            "distance": 573.82,
+            "unit": "links",
+            "from_station": "P3",
+            "to_station": "P4"
+          },
+          {
+            "bearing": "S",
+            "distance": 472.24,
+            "unit": "links",
+            "from_station": "P4",
+            "to_station": "P1"
+          }
+        ],
+        "distance_unit": "links",
+        "adjustment": "bowditch"
+      }
+    },
+    {
+      "survey_no": "201/8",
+      "village": "Hosahalli",
+      "tehsil": "Mysuru",
+      "district": "Mysuru",
+      "state": "Karnataka",
+      "lgd_village_code": "613204",
+      "village_map_sheet_no": "27",
+      "document_id": "DOC-201-8",
+      "owner_name": "Savithramma Krishnappa",
+      "area_value": 122.811,
+      "area_unit": "guntha",
+      "boundaries": {
+        "west": "Survey No. 201/7",
+        "south": "Survey No. 201/5",
+        "east": "Village road",
+        "north": "Government land"
+      },
+      "document_type": "Tippan (chain and offset) + 7/12 extract",
+      "chain_offset": {
+        "base_length": 648.14,
+        "offsets": [
+          {
+            "chainage": 0.0,
+            "offset": 0.0,
+            "side": "L",
+            "seq": 0,
+            "label": "A"
+          },
+          {
+            "chainage": 648.14,
+            "offset": 0.0,
+            "side": "L",
+            "seq": 1,
+            "label": "B"
+          },
+          {
+            "chainage": 661.48,
+            "offset": 497.54,
+            "side": "L",
+            "seq": 2,
+            "label": "C"
+          },
+          {
+            "chainage": 9.53,
+            "offset": 447.98,
+            "side": "L",
+            "seq": 3,
+            "label": "D"
+          }
+        ],
+        "unit": "links"
+      }
+    }
+  ]
+}

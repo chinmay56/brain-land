@@ -1,0 +1,185 @@
+'use client';
+
+/**
+ * Map of parcels derived from land documents.
+ *
+ * Nothing drawn here came from a cadastral shapefile. Every polygon was computed
+ * from measurements on a document, so the map colours by how the geometry was
+ * obtained rather than by record status — a parcel positioned by solving the
+ * adjacency network must never look the same as one measured with GPS.
+ *
+ * Load with next/dynamic and { ssr: false }: Leaflet touches `window` at import.
+ */
+
+import React, { useEffect, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, GeoJSON, Circle, LayersControl, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import type { AccuracyClass, ParcelCollection, ParcelFeature } from '@/types/gis';
+
+export const ACCURACY_STYLE: Record<AccuracyClass, { color: string; fill: string; label: string }> = {
+  surveyed:                { color: '#047857', fill: '#10b981', label: 'Surveyed (coordinates in the document)' },
+  reconstructed_anchored:  { color: '#1d4ed8', fill: '#3b82f6', label: 'Reconstructed and anchored' },
+  reconstructed_floating:  { color: '#7c3aed', fill: '#a78bfa', label: 'Reconstructed, not yet placed' },
+  inferred:                { color: '#b45309', fill: '#f59e0b', label: 'Inferred from adjoining parcels' },
+  none:                    { color: '#6b7280', fill: '#9ca3af', label: 'No geometry' },
+};
+
+interface Props {
+  parcels: ParcelCollection | null;
+  selectedSurveyNo: string | null;
+  onSelect: (surveyNo: string) => void;
+  showUncertainty: boolean;
+  accuracyFilter: 'ALL' | AccuracyClass;
+}
+
+function FitToParcels({ parcels }: { parcels: ParcelCollection | null }) {
+  const map = useMap();
+  const signature = useRef<string>('');
+
+  useEffect(() => {
+    if (!parcels || parcels.features.length === 0) return;
+    const sig = parcels.features.map((f) => f.properties.survey_no).join('|');
+    if (sig === signature.current) return;
+    const bounds = L.geoJSON(parcels as never).getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [34, 34] });
+      signature.current = sig;
+    }
+  }, [parcels, map]);
+
+  return null;
+}
+
+function PanToSelected({
+  parcels, selectedSurveyNo,
+}: { parcels: ParcelCollection | null; selectedSurveyNo: string | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!parcels || !selectedSurveyNo) return;
+    const feature = parcels.features.find((f) => f.properties.survey_no === selectedSurveyNo);
+    if (!feature) return;
+    const bounds = L.geoJSON(feature as never).getBounds();
+    if (bounds.isValid()) map.flyToBounds(bounds, { padding: [90, 90], duration: 0.55 });
+  }, [selectedSurveyNo, parcels, map]);
+  return null;
+}
+
+/** Centroid of a GeoJSON ring, good enough for placing an uncertainty circle. */
+function ringCentroid(coords: number[][]): [number, number] {
+  let x = 0, y = 0, n = 0;
+  for (const [lon, lat] of coords) { x += lon; y += lat; n += 1; }
+  return n ? [y / n, x / n] : [0, 0];
+}
+
+export default function CadastralMap({
+  parcels, selectedSurveyNo, onSelect, showUncertainty, accuracyFilter,
+}: Props) {
+  const visible = useMemo<ParcelCollection | null>(() => {
+    if (!parcels) return null;
+    if (accuracyFilter === 'ALL') return parcels;
+    return {
+      ...parcels,
+      features: parcels.features.filter((f) => f.properties.accuracy_class === accuracyFilter),
+    };
+  }, [parcels, accuracyFilter]);
+
+  const style = (feature?: ParcelFeature) => {
+    const cls = feature?.properties.accuracy_class ?? 'none';
+    const palette = ACCURACY_STYLE[cls];
+    const selected = feature?.properties.survey_no === selectedSurveyNo;
+    const areaBad = feature?.properties.area_within_tolerance === false;
+    return {
+      color: selected ? '#141416' : areaBad ? '#e11d48' : palette.color,
+      weight: selected ? 3.5 : areaBad ? 2.6 : 1.7,
+      fillColor: palette.fill,
+      fillOpacity: selected ? 0.55 : 0.32,
+      // A dashed outline means the position is inferred, not measured.
+      dashArray: cls === 'inferred' ? '7 4' : undefined,
+    };
+  };
+
+  const onEach = (feature: ParcelFeature, layer: L.Layer) => {
+    const p = feature.properties;
+    const unc = p.position_uncertainty_m
+      ? ` &middot; ±${p.position_uncertainty_m.toFixed(1)} m`
+      : '';
+    layer.bindTooltip(
+      `<div style="font-family:ui-sans-serif,system-ui;line-height:1.45">
+         <strong style="font-size:13px">Survey No. ${p.survey_no}</strong><br/>
+         <span style="font-size:11px;color:#57534e">${p.owner_name ?? 'No owner recorded'}</span><br/>
+         <span style="font-size:11px;color:#57534e">${p.computed_area_ha ?? '—'} ha
+           &middot; ${p.method.replace('_', ' ')}${unc}</span>
+       </div>`,
+      { sticky: true, direction: 'top', opacity: 0.97 },
+    );
+    layer.on({
+      click: () => onSelect(p.survey_no),
+      mouseover: (e) => (e.target as L.Path).setStyle({ fillOpacity: 0.58 }),
+      mouseout: (e) => (e.target as L.Path).setStyle({
+        fillOpacity: p.survey_no === selectedSurveyNo ? 0.55 : 0.32,
+      }),
+    });
+  };
+
+  const uncertaintyCircles = useMemo(() => {
+    if (!showUncertainty || !visible) return [];
+    return visible.features
+      .filter((f) => (f.properties.position_uncertainty_m ?? 0) > 0.5)
+      .map((f) => ({
+        key: f.properties.survey_no,
+        centre: ringCentroid(f.geometry.coordinates[0]),
+        radius: f.properties.position_uncertainty_m as number,
+      }));
+  }, [visible, showUncertainty]);
+
+  return (
+    <MapContainer
+      center={[22.0, 79.0]}
+      zoom={5}
+      scrollWheelZoom
+      style={{ height: '100%', width: '100%', background: '#FAF9F6' }}
+    >
+      <LayersControl position="topright">
+        <LayersControl.BaseLayer checked name="Street">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
+          />
+        </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Satellite">
+          <TileLayer
+            attribution="Imagery &copy; Esri"
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+        </LayersControl.BaseLayer>
+      </LayersControl>
+
+      {/* The error bar, drawn to scale: how far an inferred parcel might really be. */}
+      {uncertaintyCircles.map((c) => (
+        <Circle
+          key={`unc-${c.key}`}
+          center={c.centre as [number, number]}
+          radius={c.radius}
+          pathOptions={{ color: '#b45309', weight: 1, dashArray: '3 4',
+                         fillColor: '#f59e0b', fillOpacity: 0.07 }}
+        />
+      ))}
+
+      {visible && visible.features.length > 0 && (
+        <GeoJSON
+          key={`p-${accuracyFilter}-${selectedSurveyNo ?? 'x'}-${visible.features.length}`}
+          data={visible as never}
+          style={style as never}
+          onEachFeature={onEach as never}
+        />
+      )}
+
+      <FitToParcels parcels={visible} />
+      <PanToSelected parcels={parcels} selectedSurveyNo={selectedSurveyNo} />
+    </MapContainer>
+  );
+}

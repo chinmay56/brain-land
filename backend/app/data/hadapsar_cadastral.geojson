@@ -1,0 +1,485 @@
+{
+  "type": "FeatureCollection",
+  "name": "hadapsar_cadastral_parcels",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "124/1",
+        "khasra_no": "K-4820",
+        "land_classification": "Jirayat (Agricultural Dry)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "clean"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92118946,
+              18.50753224
+            ],
+            [
+              73.92270512,
+              18.50753224
+            ],
+            [
+              73.92270512,
+              18.50916011
+            ],
+            [
+              73.92118946,
+              18.50916011
+            ],
+            [
+              73.92118946,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "124/2",
+        "khasra_no": "K-4821",
+        "land_classification": "Jirayat (Agricultural Dry)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "area mismatch: register says 2.45 ha"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92270512,
+              18.50753224
+            ],
+            [
+              73.92422079,
+              18.50753224
+            ],
+            [
+              73.92422079,
+              18.50916011
+            ],
+            [
+              73.92270512,
+              18.50916011
+            ],
+            [
+              73.92270512,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "124/3",
+        "khasra_no": "K-4822",
+        "land_classification": "Jirayat (Agricultural Dry)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "clean; 6 m digitising sliver to its east"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92422079,
+              18.50753224
+            ],
+            [
+              73.92545226,
+              18.50753224
+            ],
+            [
+              73.92545226,
+              18.50916011
+            ],
+            [
+              73.92422079,
+              18.50916011
+            ],
+            [
+              73.92422079,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "131/2",
+        "khasra_no": "K-9012",
+        "land_classification": "Bagayat (Irrigated)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "parent parcel of 131/2/A and 131/2/B"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.9255091,
+              18.50753224
+            ],
+            [
+              73.92725211,
+              18.50753224
+            ],
+            [
+              73.92725211,
+              18.50916011
+            ],
+            [
+              73.9255091,
+              18.50916011
+            ],
+            [
+              73.9255091,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "125/4",
+        "khasra_no": "K-7819",
+        "land_classification": "Bagayat (Irrigated)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "overlaps 125/5 by 50 m; area mismatch"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92118946,
+              18.50554262
+            ],
+            [
+              73.92289458,
+              18.50554262
+            ],
+            [
+              73.92289458,
+              18.50717049
+            ],
+            [
+              73.92118946,
+              18.50717049
+            ],
+            [
+              73.92118946,
+              18.50554262
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "125/5",
+        "khasra_no": "K-7820",
+        "land_classification": "Bagayat (Irrigated)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "overlaps 125/4"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92242093,
+              18.50554262
+            ],
+            [
+              73.92412606,
+              18.50554262
+            ],
+            [
+              73.92412606,
+              18.50717049
+            ],
+            [
+              73.92242093,
+              18.50717049
+            ],
+            [
+              73.92242093,
+              18.50554262
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "128/1",
+        "khasra_no": "K-1102",
+        "land_classification": "Non-Agricultural (Commercial)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "clean"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92469443,
+              18.50554262
+            ],
+            [
+              73.92559436,
+              18.50554262
+            ],
+            [
+              73.92559436,
+              18.50644699
+            ],
+            [
+              73.92469443,
+              18.50644699
+            ],
+            [
+              73.92469443,
+              18.50554262
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "140/7",
+        "khasra_no": null,
+        "land_classification": "Gairan (Village Common)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "orphan parcel: on the map, no textual record"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92616273,
+              18.50554262
+            ],
+            [
+              73.92739421,
+              18.50554262
+            ],
+            [
+              73.92739421,
+              18.50680874
+            ],
+            [
+              73.92616273,
+              18.50680874
+            ],
+            [
+              73.92616273,
+              18.50554262
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "98/B",
+        "khasra_no": "K-0098",
+        "land_classification": "Jirayat (Agricultural Dry)",
+        "parent_survey_no": null,
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": "containment failure: falls outside Hadapsar boundary"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92782049,
+              18.50590437
+            ],
+            [
+              73.92905196,
+              18.50590437
+            ],
+            [
+              73.92905196,
+              18.50726093
+            ],
+            [
+              73.92782049,
+              18.50726093
+            ],
+            [
+              73.92782049,
+              18.50590437
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "131/2/A",
+        "khasra_no": "K-9012-A",
+        "land_classification": "Bagayat (Irrigated)",
+        "parent_survey_no": "131/2",
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": ""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.9255091,
+              18.50753224
+            ],
+            [
+              73.92626693,
+              18.50753224
+            ],
+            [
+              73.92626693,
+              18.50916011
+            ],
+            [
+              73.9255091,
+              18.50916011
+            ],
+            [
+              73.9255091,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "survey_no": "131/2/B",
+        "khasra_no": "K-9012-B",
+        "land_classification": "Bagayat (Irrigated)",
+        "parent_survey_no": "131/2",
+        "lgd_village_code": "556489",
+        "village": "Hadapsar",
+        "tehsil": "Haveli",
+        "district": "Pune",
+        "state": "Maharashtra",
+        "source": "Cadastral sheet 14, georeferenced 2026-08",
+        "_note": ""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              73.92626693,
+              18.50753224
+            ],
+            [
+              73.92674058,
+              18.50753224
+            ],
+            [
+              73.92674058,
+              18.50916011
+            ],
+            [
+              73.92626693,
+              18.50916011
+            ],
+            [
+              73.92626693,
+              18.50753224
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -24,6 +24,14 @@ opencv-python-headless>=4.9.0.80
 pypdf>=4.1.0
 pdf2image>=1.17.0
 
+# Geospatial / Cadastral validation
+# shapely  -> geometry predicates (overlap, contains, union, difference, distance)
+# pyproj   -> CRS transforms; metric work runs in EPSG:32643 (UTM 43N), not degrees
+# These are the in-process stand-ins for PostGIS. When the parcel table moves to
+# PostgreSQL + PostGIS the same rules become ST_Overlaps / ST_Within / ST_Area.
+shapely>=2.0.3
+pyproj>=3.6.1
+
 # Security & Tokens
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4

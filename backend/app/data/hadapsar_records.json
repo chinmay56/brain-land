@@ -1,0 +1,128 @@
+{
+  "village": "Hadapsar",
+  "lgd_village_code": "556489",
+  "source": "Extraction output (stands in for the OCR stage)",
+  "records": [
+    {
+      "record_id": "LR-2026-1020",
+      "survey_no": "124/1",
+      "owner_name": "Vikram Ananta Joshi",
+      "recorded_area_ha": 2.88,
+      "area_unit": "Hectares",
+      "khata": "KH-1023",
+      "mutation_no": "5810",
+      "extraction_confidence": 0.96,
+      "document_type": "7/12 Extract (Record of Rights)"
+    },
+    {
+      "record_id": "LR-2026-1021",
+      "survey_no": "124/2",
+      "owner_name": "Ramesh Baliram Patil",
+      "recorded_area_ha": 2.45,
+      "area_unit": "Hectares",
+      "khata": "KH-1024",
+      "mutation_no": "58?1",
+      "extraction_confidence": 0.71,
+      "document_type": "7/12 Extract (Record of Rights)"
+    },
+    {
+      "record_id": "LR-2026-1024",
+      "survey_no": "124/3",
+      "owner_name": "Sunita Devi Deshmukh",
+      "recorded_area_ha": 2.34,
+      "area_unit": "Hectares",
+      "khata": "KH-1025",
+      "mutation_no": "5812",
+      "extraction_confidence": 0.94,
+      "document_type": "7/12 Extract (Record of Rights)"
+    },
+    {
+      "record_id": "LR-2026-1019",
+      "survey_no": "131/2",
+      "owner_name": "Sunita Devi Deshmukh",
+      "recorded_area_ha": 3.12,
+      "area_unit": "Hectares",
+      "khata": "KH-3140",
+      "mutation_no": "5820",
+      "extraction_confidence": 0.98,
+      "document_type": "Partition Deed (Hissa Register)"
+    },
+    {
+      "record_id": "LR-2026-1025",
+      "survey_no": "131/2/A",
+      "owner_name": "Anil Sunil Deshmukh",
+      "recorded_area_ha": 1.44,
+      "area_unit": "Hectares",
+      "khata": "KH-3141",
+      "mutation_no": "5821",
+      "extraction_confidence": 0.93,
+      "document_type": "Partition Deed (Hissa Register)"
+    },
+    {
+      "record_id": "LR-2026-1026",
+      "survey_no": "131/2/B",
+      "owner_name": "Kavita Sunil Deshmukh",
+      "recorded_area_ha": 0.9,
+      "area_unit": "Hectares",
+      "khata": "KH-3142",
+      "mutation_no": "5822",
+      "extraction_confidence": 0.91,
+      "document_type": "Partition Deed (Hissa Register)"
+    },
+    {
+      "record_id": "LR-2026-1022",
+      "survey_no": "125/4",
+      "owner_name": "Suresh Chandra Kumar",
+      "recorded_area_ha": 1.8,
+      "area_unit": "Hectares",
+      "khata": "KH-2091",
+      "mutation_no": "9420",
+      "extraction_confidence": 0.58,
+      "document_type": "Sale Deed & Mutation Register"
+    },
+    {
+      "record_id": "LR-2026-1027",
+      "survey_no": "125/5",
+      "owner_name": "Ganesh Maruti Shinde",
+      "recorded_area_ha": 3.24,
+      "area_unit": "Hectares",
+      "khata": "KH-2092",
+      "mutation_no": "9421",
+      "extraction_confidence": 0.89,
+      "document_type": "Sale Deed & Mutation Register"
+    },
+    {
+      "record_id": "LR-2026-1023",
+      "survey_no": "128/1",
+      "owner_name": "Amit Sharma",
+      "recorded_area_ha": 0.95,
+      "area_unit": "Hectares",
+      "khata": "KH-0492",
+      "mutation_no": "1042",
+      "extraction_confidence": 0.96,
+      "document_type": "Khatoni & Khasra Extract"
+    },
+    {
+      "record_id": "LR-2026-1018",
+      "survey_no": "98/B",
+      "owner_name": "Ganpat Rao Shinde",
+      "recorded_area_ha": 1.95,
+      "area_unit": "Hectares",
+      "khata": "KH-0098",
+      "mutation_no": "0871",
+      "extraction_confidence": 0.42,
+      "document_type": "Legacy Handwritten Patta"
+    },
+    {
+      "record_id": "LR-2026-1028",
+      "survey_no": "145/3",
+      "owner_name": "Baburao Tukaram Kale",
+      "recorded_area_ha": 1.55,
+      "area_unit": "Hectares",
+      "khata": "KH-4501",
+      "mutation_no": "6630",
+      "extraction_confidence": 0.88,
+      "document_type": "Legacy Handwritten Patta"
+    }
+  ]
+}

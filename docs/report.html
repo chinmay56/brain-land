@@ -1,0 +1,1047 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Document-to-GIS — Technical Report</title>
+<style>
+  @page { size: A4; margin: 15mm 14mm 16mm 14mm; }
+  :root{
+    --ink:#141416; --muted:#6b6560; --faint:#96908a;
+    --line:#dcd8d0; --paper:#faf9f6; --terracotta:#9a3f2b;
+    --green:#047857; --blue:#1d4ed8; --amber:#b45309; --rose:#be123c; --violet:#6d28d9;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; color:var(--ink); background:#fff;
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-size:9.3pt; line-height:1.52;
+  }
+  h1{font-size:26pt;line-height:1.12;margin:0 0 6pt;letter-spacing:-.02em;font-weight:700}
+  h2{font-size:14pt;margin:0 0 3pt;letter-spacing:-.01em;font-weight:700;
+     padding-bottom:5pt;border-bottom:2px solid var(--ink);page-break-after:avoid;break-after:avoid}
+  h3{font-size:10.5pt;margin:15pt 0 4pt;font-weight:700;page-break-after:avoid;break-after:avoid}
+  h4{font-size:9.3pt;margin:11pt 0 3pt;font-weight:700;color:var(--terracotta);page-break-after:avoid;break-after:avoid}
+  p{margin:0 0 7pt}
+  code,.mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:8.1pt}
+  code{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:0 3px}
+  .eyebrow{font-size:7.6pt;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--terracotta)}
+  .lede{font-size:10.5pt;line-height:1.55;color:#3d3a36}
+  .muted{color:var(--muted)}
+  .small{font-size:8.2pt;line-height:1.45}
+  .tiny{font-size:7.4pt;line-height:1.4;color:var(--faint)}
+
+  section{page-break-before:always;padding-top:2pt}
+  section.first{page-break-before:avoid}
+  .keep{page-break-inside:avoid}
+
+  table{width:100%;border-collapse:collapse;margin:7pt 0 9pt;font-size:8.2pt;page-break-inside:avoid}
+  th{text-align:left;font-weight:700;padding:5pt 7pt 5pt 0;border-bottom:1.4px solid var(--ink);
+     font-size:7.5pt;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  td{padding:5pt 7pt 5pt 0;border-bottom:.6px solid var(--line);vertical-align:top}
+  td.b{font-weight:700}
+  tr.tot td{border-top:1.2px solid var(--ink);border-bottom:none;font-weight:700}
+
+  .box{border:1px solid var(--line);border-radius:6px;padding:10pt 12pt;margin:8pt 0;
+       background:var(--paper);page-break-inside:avoid}
+  .box.key{border-left:3px solid var(--terracotta);background:#fdf8f6}
+  .box.warn{border-left:3px solid var(--rose);background:#fff5f6}
+  .box.ok{border-left:3px solid var(--green);background:#f2fbf7}
+  .box h4{margin-top:0}
+
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:11pt}
+  .cols3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9pt}
+
+  pre{background:#0d0b0a;color:#e8e4df;border-radius:6px;padding:9pt 11pt;
+      font-family:"SF Mono",Menlo,Consolas,monospace;font-size:7.5pt;line-height:1.5;
+      overflow:hidden;margin:7pt 0;white-space:pre-wrap;orphans:4;widows:4}
+  pre .k{color:#7dd3fc}. pre .s{color:#bef264}
+  pre .s{color:#bef264} pre .n{color:#fdba74} pre .c{color:#8b8178;font-style:italic}
+
+  figure{margin:11pt 0;page-break-inside:avoid}
+  figcaption{font-size:7.6pt;color:var(--faint);margin-top:5pt;line-height:1.42}
+  svg{display:block;max-width:100%}
+
+  .pill{display:inline-block;font-size:7pt;font-weight:700;padding:1.5pt 6pt;border-radius:9px;
+        letter-spacing:.04em;text-transform:uppercase}
+  .p-green{background:#d1fae5;color:#065f46} .p-blue{background:#dbeafe;color:#1e3a8a}
+  .p-amber{background:#fef3c7;color:#92400e} .p-rose{background:#ffe4e6;color:#9f1239}
+  .p-grey{background:#eeece8;color:#57534e} .p-violet{background:#ede9fe;color:#5b21b6}
+
+  ul,ol{margin:0 0 7pt;padding-left:15pt}
+  li{margin-bottom:3pt}
+
+  .cover{height:252mm;display:flex;flex-direction:column;justify-content:space-between}
+  .rule{height:3px;background:var(--ink);margin:9pt 0 13pt}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:9pt;margin:11pt 0}
+  .kpi .k{border:1px solid var(--line);border-radius:6px;padding:8pt 10pt;background:var(--paper)}
+  .kpi .kv{font-size:17pt;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+  .kpi .kl{font-size:7pt;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);
+           font-weight:700;margin-top:3pt}
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="first">
+<div class="cover">
+  <div>
+    <div class="eyebrow">Intelligent Land Record Digitization &amp; Validation System</div>
+    <div class="rule"></div>
+    <h1>Plotting land parcels<br/>from the documents themselves</h1>
+    <p class="lede" style="max-width:150mm;margin-top:10pt">
+      A technical report on the geometry layer: what has to be extracted from an Indian
+      land record before anything can appear on a map, how the OCR stage hands over to
+      the GIS stage, the algorithms that turn nineteenth-century field measurements into
+      WGS84 polygons, and what is built today versus what an ideal system would do.
+    </p>
+
+    <div class="kpi">
+      <div class="k"><div class="kv">2,983</div><div class="kl">Lines of engine</div></div>
+      <div class="k"><div class="kv">0.025 m</div><div class="kl">Best assembly error</div></div>
+      <div class="k"><div class="kv">20</div><div class="kl">Indian CRSs handled</div></div>
+      <div class="k"><div class="kv">0</div><div class="kl">External map layers</div></div>
+    </div>
+
+    <div class="box key" style="margin-top:14pt">
+      <h4>The one sentence that governs everything else</h4>
+      <p style="margin:0">
+        A 7/12 extract, a jamabandi row or a khatauni entry contains
+        <strong>no coordinates and cannot be plotted</strong>. Geometry lives in a second,
+        different document for the same survey number — the <strong>tippan</strong> or
+        <strong>Field Measurement Book</strong>. Every design decision in this report
+        follows from that fact.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <table style="margin:0">
+      <tr><td class="b" style="width:34mm">Prepared for</td><td>Team Brahmastra_1 &middot; SIH 2026</td></tr>
+      <tr><td class="b">Repository</td><td class="mono">D:\land\brain-land</td></tr>
+      <tr><td class="b">Scope</td><td>Geometry &amp; GIS layer. OCR is upstream and not yet built.</td></tr>
+      <tr><td class="b">Status</td><td>Engine complete and tested; OCR contract defined and stubbed</td></tr>
+    </table>
+    <p class="tiny" style="margin-top:8pt">
+      The sample villages referenced throughout are worked examples of the input format.
+      Their polygons are genuinely computed by the production engine from bearings,
+      distances and offsets — nothing is a pre-drawn map — but the measurements were
+      authored rather than lifted from a record room.
+    </p>
+  </div>
+</div>
+</section>
+
+
+<!-- ============================== 1. THE MODEL ============================== -->
+<section>
+<div class="eyebrow">Section 1</div>
+<h2>Why a Record of Rights cannot be plotted</h2>
+
+<p style="margin-top:9pt">
+Almost every team approaching this problem statement assumes the pipeline is
+<em>scan the 7/12 → OCR it → put it on a map</em>. That pipeline cannot work, and it is
+worth being precise about why.
+</p>
+
+<p>
+A Record of Rights is a <strong>fiscal</strong> document. Its job is to record who pays
+revenue on what, and it does that with a survey number, an owner, an area and a land
+classification. It has never carried coordinates, because the parcel's shape was recorded
+separately by the survey establishment, in the <strong>tippan</strong> (Maharashtra,
+Karnataka) or the <strong>Field Measurement Book</strong> (Tamil Nadu, Telangana, Andhra
+Pradesh). Two documents, two custodians, one survey number joining them.
+</p>
+
+<figure>
+<svg viewBox="0 0 700 250" width="100%">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+      <polygon points="0 0, 9 3.5, 0 7" fill="#141416"/>
+    </marker>
+  </defs>
+
+  <!-- RoR -->
+  <rect x="6" y="14" width="196" height="102" rx="6" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="18" y="34" font-size="11" font-weight="700" font-family="Helvetica">7/12 · Jamabandi · Khatauni</text>
+  <text x="18" y="47" font-size="8.5" fill="#6b6560" font-family="Helvetica">The Record of Rights — fiscal</text>
+  <line x1="18" y1="55" x2="190" y2="55" stroke="#dcd8d0"/>
+  <text x="18" y="69" font-size="8.5" font-family="Helvetica">✓ Survey no. · owner · khata</text>
+  <text x="18" y="82" font-size="8.5" font-family="Helvetica">✓ Area (2 acre 15 guntha)</text>
+  <text x="18" y="95" font-size="8.5" font-family="Helvetica">✓ Four boundaries (chatushima)</text>
+  <text x="18" y="108" font-size="8.5" fill="#be123c" font-weight="700" font-family="Helvetica">✗ No coordinates. No shape.</text>
+
+  <!-- Tippan -->
+  <rect x="6" y="132" width="196" height="102" rx="6" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="18" y="152" font-size="11" font-weight="700" font-family="Helvetica">Tippan · FMB</text>
+  <text x="18" y="165" font-size="8.5" fill="#6b6560" font-family="Helvetica">The survey record — geometric</text>
+  <line x1="18" y1="173" x2="190" y2="173" stroke="#dcd8d0"/>
+  <text x="18" y="187" font-size="8.5" font-family="Helvetica">✓ Bearings &amp; distances (links)</text>
+  <text x="18" y="200" font-size="8.5" font-family="Helvetica">✓ Chain-and-offset ladder</text>
+  <text x="18" y="213" font-size="8.5" font-family="Helvetica">✓ Exact shape and area</text>
+  <text x="18" y="226" font-size="8.5" fill="#be123c" font-weight="700" font-family="Helvetica">✗ No position on Earth.</text>
+
+  <!-- join -->
+  <line x1="204" y1="65" x2="252" y2="105" stroke="#141416" stroke-width="1.3" marker-end="url(#ar)"/>
+  <line x1="204" y1="183" x2="252" y2="143" stroke="#141416" stroke-width="1.3" marker-end="url(#ar)"/>
+  <rect x="258" y="98" width="128" height="52" rx="6" fill="#141416"/>
+  <text x="322" y="118" font-size="10" font-weight="700" fill="#fff" text-anchor="middle" font-family="Helvetica">JOIN ON</text>
+  <text x="322" y="133" font-size="9" fill="#e8e4df" text-anchor="middle" font-family="Menlo,monospace">lgd_village + survey_no</text>
+
+  <line x1="388" y1="124" x2="432" y2="124" stroke="#141416" stroke-width="1.3" marker-end="url(#ar)"/>
+
+  <!-- output -->
+  <rect x="438" y="52" width="256" height="144" rx="6" fill="#fff" stroke="#141416" stroke-width="1.4"/>
+  <text x="452" y="72" font-size="11" font-weight="700" font-family="Helvetica">One validated parcel</text>
+  <polygon points="470,92 560,88 574,150 466,156" fill="#10b98133" stroke="#047857" stroke-width="1.6"/>
+  <circle cx="470" cy="92" r="2.6" fill="#047857"/><circle cx="560" cy="88" r="2.6" fill="#047857"/>
+  <circle cx="574" cy="150" r="2.6" fill="#047857"/><circle cx="466" cy="156" r="2.6" fill="#047857"/>
+  <text x="596" y="98" font-size="8" font-family="Helvetica">Shape ← tippan</text>
+  <text x="596" y="112" font-size="8" font-family="Helvetica">Owner ← 7/12</text>
+  <text x="596" y="126" font-size="8" font-family="Helvetica">Area ← both, cross-checked</text>
+  <text x="596" y="140" font-size="8" font-family="Helvetica">Position ← anchor or</text>
+  <text x="596" y="152" font-size="8" font-family="Helvetica">neighbours</text>
+  <text x="452" y="182" font-size="8" fill="#6b6560" font-family="Helvetica">GeoJSON, WGS84, with provenance and an accuracy class</text>
+</svg>
+<figcaption><strong>Figure 1.</strong> The two-document model. Neither record is plottable on its own; the survey number joins them. This is the single most important structural fact about Indian land records for a GIS project, and it determines what the extraction stage must target.</figcaption>
+</figure>
+
+<div class="box warn">
+<h4>Practical consequence for the extraction plan</h4>
+<p style="margin:0">
+If the OCR effort targets only the 7/12 / jamabandi corpus, the system will produce a
+perfect searchable text database and <strong>zero</strong> map coverage. The tippan and FMB
+corpus — different shelves, different registers, often a different office — has to be in
+scope from the start, and it is harder: it is a hand-drawn diagram with a numeric table
+attached, not a ruled text table.
+</p>
+</div>
+
+<h3>What each source can and cannot give you</h3>
+<table>
+<tr><th style="width:12mm">Tier</th><th style="width:34mm">Source</th><th>Shape</th><th>Area</th><th>Position</th><th>Orientation</th><th>Self-check</th></tr>
+<tr><td class="b">A</td><td>Coordinates</td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-grey">none</span></td></tr>
+<tr><td class="b">B</td><td>Traverse</td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-rose">none</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">closure</span></td></tr>
+<tr><td class="b">C</td><td>Chain &amp; offset</td><td><span class="pill p-green">exact</span></td><td><span class="pill p-green">exact</span></td><td><span class="pill p-rose">none</span></td><td><span class="pill p-rose">none</span></td><td><span class="pill p-grey">none</span></td></tr>
+<tr><td class="b">D</td><td>Four boundaries</td><td><span class="pill p-rose">none</span></td><td><span class="pill p-blue">declared</span></td><td><span class="pill p-amber">relative</span></td><td><span class="pill p-rose">none</span></td><td><span class="pill p-grey">none</span></td></tr>
+</table>
+
+<p class="small">
+Tier B is the only source that validates itself: a closed boundary walk must return to
+its start, and the distance by which it fails is a direct measure of transcription
+quality. Tier D is the only source present on essentially every document, and although it
+gives nothing alone, across a village it becomes the constraint network that positions
+everything (Section 6).
+</p>
+</section>
+
+
+<!-- ============================== 2. EXTRACTION SPEC ============================== -->
+<section>
+<div class="eyebrow">Section 2</div>
+<h2>What must be extracted, exactly</h2>
+
+<p style="margin-top:9pt">
+This is the contract the OCR stage has to satisfy. Anything short of it produces a record
+that can be searched but not mapped.
+</p>
+
+<h3>2.1 Mandatory on every document, whatever its type</h3>
+<table>
+<tr><th style="width:44mm">Field</th><th style="width:26mm">Type</th><th>Why the geometry layer needs it</th></tr>
+<tr><td class="mono b">survey_no</td><td>string</td><td>The join key: RoR ↔ tippan, and parcel ↔ neighbour. Must preserve the sub-division (hissa) exactly — <code>124/2/A</code> is not <code>124/2</code>.</td></tr>
+<tr><td class="mono b">village, tehsil,<br/>district, state</td><td>string</td><td>Identity, and the state decides regional unit values. Resolve to LGD codes where possible so spelling variants collapse.</td></tr>
+<tr><td class="mono b">area_value</td><td>number</td><td>The independent check on every reconstruction. Without it, a geometry can be wrong and nothing will notice.</td></tr>
+<tr><td class="mono b">area_unit</td><td>string</td><td>guntha, acre, hectare, kanal, bigha… Regional units additionally require the state.</td></tr>
+<tr><td class="mono b">boundaries</td><td>object</td><td>north / south / east / west. Feeds the adjacency solver. Capture the raw text — "Survey No. 125" and "Nala" are both meaningful.</td></tr>
+</table>
+
+<h3>2.2 Then whichever geometry source the document carries</h3>
+
+<div class="box">
+<h4>Tier A — Coordinates</h4>
+<p class="small" style="margin-bottom:5pt"><strong>Found in:</strong> resurvey / DGPS records, SVAMITVA property cards, modern FMB sheets, deed schedules that quote coordinates.</p>
+<table style="margin:4pt 0 0">
+<tr><td class="mono b" style="width:44mm">coordinates.points[]</td><td>Boundary vertices in order, as <code>[x, y]</code> pairs.</td></tr>
+<tr><td class="mono b">coordinates.crs</td><td><strong>Not optional.</strong> "WGS84", a UTM zone, or a full India zone name. See Section 5.2.</td></tr>
+<tr><td class="mono b">coordinates.order</td><td><code>xy</code> or <code>yx</code> — whether the sheet writes long,lat or lat,long.</td></tr>
+</table>
+</div>
+
+<div class="box">
+<h4>Tier B — Traverse</h4>
+<p class="small" style="margin-bottom:5pt"><strong>Found in:</strong> Field Measurement Book, tippan, survey field books, deed schedules given as bearings and distances.</p>
+<table style="margin:4pt 0 0">
+<tr><td class="mono b" style="width:44mm">traverse.legs[].bearing</td><td>Whole circle (<code>125-30-00</code>) or quadrantal (<code>N45°30'E</code>). Both notations must round-trip.</td></tr>
+<tr><td class="mono b">traverse.legs[].distance</td><td>Numeric.</td></tr>
+<tr><td class="mono b">traverse.legs[].unit</td><td>links and chains are the usual units in old books; also m, ft, karam, gaz.</td></tr>
+<tr><td class="mono b">magnetic_declination_deg</td><td>Only if the bearings are magnetic. Omitting it when they are rotates the whole parcel.</td></tr>
+</table>
+</div>
+
+<div class="box">
+<h4>Tier C — Chain and offset (the tippan "ladder")</h4>
+<p class="small" style="margin-bottom:5pt"><strong>Found in:</strong> tippan sketches, village measurement books. This is the commonest geometric record in the legacy corpus and the hardest to extract, because it is a drawing with numbers on it rather than a table.</p>
+<table style="margin:4pt 0 0">
+<tr><td class="mono b" style="width:44mm">chain_offset.base_length</td><td>Length of the base line the surveyor ran across the field.</td></tr>
+<tr><td class="mono b">offsets[].chainage</td><td>Distance along the base line. <strong>May be negative</strong> — a corner can lie behind the starting station.</td></tr>
+<tr><td class="mono b">offsets[].offset</td><td>Perpendicular distance to the boundary point.</td></tr>
+<tr><td class="mono b">offsets[].side</td><td><code>L</code> or <code>R</code> of the base line. Getting this wrong mirrors the parcel.</td></tr>
+<tr><td class="mono b">offsets[].seq</td><td>Corner order, if the sketch numbers its points. Removes all ambiguity in ring construction.</td></tr>
+<tr><td class="mono b">base_bearing</td><td>True bearing of the base line, if stated. Without it the shape is exact but its orientation is unknown.</td></tr>
+</table>
+</div>
+
+<div class="box">
+<h4>Tier D — Four boundaries</h4>
+<p class="small" style="margin:0">
+<code>boundaries.north / south / east / west</code>, captured as raw text. The solver
+distinguishes a parcel reference ("Survey No. 125", "S.No 124/2/A") from a non-parcel
+edge ("Nala", "Village road", "Government land", "Kaluva") and uses the former as
+constraints. Non-parcel edges are retained, not discarded — they tell you the parcel is
+on the edge of the block.
+</p>
+</div>
+
+<h3>2.3 Optional, but each one materially improves the result</h3>
+<table>
+<tr><td class="mono b" style="width:44mm">control_points[]</td><td>Any corner whose real position is known: a trijunction pillar, a GTS benchmark, or simply two corners an officer clicks on satellite imagery. <strong>Two of them fix position, rotation and scale simultaneously.</strong></td></tr>
+<tr><td class="mono b">parent_survey_no</td><td>Enables the subdivision-sum check — children must tile the parent.</td></tr>
+<tr><td class="mono b">village_map_sheet_no</td><td>Which cadastral sheet the tippan came from; groups parcels for batch assembly.</td></tr>
+<tr><td class="mono b">survey_date</td><td>Magnetic declination drifts over decades. An 1890 compass bearing and a 1970 one need different corrections.</td></tr>
+</table>
+
+<p class="small">The machine-readable version of this whole section is served live at
+<code>GET /api/gis/requirements</code>, so the extraction team can code against it rather
+than against a document.</p>
+</section>
+
+
+<!-- ============================== 3. OCR HANDOFF ============================== -->
+<section>
+<div class="eyebrow">Section 3</div>
+<h2>The OCR → GIS handoff, in detail</h2>
+
+<p style="margin-top:9pt">
+The geometry engine and the OCR stage are deliberately decoupled by a single JSON contract.
+The engine has never seen an image and never will; OCR never has to know what a Lambert
+Conformal Conic projection is. This is why the GIS layer is finished while OCR has not
+started.
+</p>
+
+<figure>
+<svg viewBox="0 0 700 330" width="100%">
+  <defs>
+    <marker id="ar2" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#141416"/>
+    </marker>
+    <marker id="ar3" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#9a3f2b"/>
+    </marker>
+  </defs>
+
+  <!-- Stage 1 -->
+  <text x="6" y="14" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">1 · CAPTURE</text>
+  <rect x="6" y="20" width="118" height="86" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="16" y="37" font-size="8.5" font-weight="700" font-family="Helvetica">Scanned images</text>
+  <text x="16" y="51" font-size="7.5" fill="#6b6560" font-family="Helvetica">7/12 register page</text>
+  <text x="16" y="63" font-size="7.5" fill="#6b6560" font-family="Helvetica">Tippan sketch</text>
+  <text x="16" y="75" font-size="7.5" fill="#6b6560" font-family="Helvetica">FMB sheet</text>
+  <text x="16" y="87" font-size="7.5" fill="#6b6560" font-family="Helvetica">Legacy PDF</text>
+  <text x="16" y="99" font-size="7" fill="#96908a" font-family="Helvetica">+ SHA-256 per page</text>
+
+  <line x1="126" y1="63" x2="152" y2="63" stroke="#141416" stroke-width="1.2" marker-end="url(#ar2)"/>
+
+  <!-- Stage 2 -->
+  <text x="156" y="14" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">2 · EXTRACTION (NOT YET BUILT)</text>
+  <rect x="156" y="20" width="186" height="140" rx="5" fill="#fff" stroke="#9a3f2b" stroke-dasharray="4 3"/>
+  <text x="166" y="37" font-size="8.5" font-weight="700" font-family="Helvetica">Sarvam / OCR pipeline</text>
+  <line x1="166" y1="43" x2="332" y2="43" stroke="#e5e1da"/>
+  <text x="166" y="56" font-size="7.5" font-family="Helvetica">a. Page classify: RoR vs tippan vs map</text>
+  <text x="166" y="68" font-size="7.5" font-family="Helvetica">b. Text OCR / HTR (22 languages)</text>
+  <text x="166" y="80" font-size="7.5" font-family="Helvetica">c. Table structure → rows &amp; columns</text>
+  <text x="166" y="92" font-size="7.5" font-family="Helvetica">d. <tspan font-weight="700">Ladder parse</tspan>: base line + offsets</text>
+  <text x="166" y="104" font-size="7.5" font-family="Helvetica">e. Bearing/distance table → legs</text>
+  <text x="166" y="116" font-size="7.5" font-family="Helvetica">f. Per-field confidence</text>
+  <text x="166" y="128" font-size="7.5" font-family="Helvetica">g. Script handling: Modi, Kaithi, Urdu</text>
+  <rect x="166" y="136" width="166" height="17" rx="3" fill="#fdf8f6" stroke="#e8d5cf"/>
+  <text x="172" y="147" font-size="7" fill="#9a3f2b" font-family="Helvetica">Officer reviews low-confidence fields here</text>
+
+  <line x1="249" y1="162" x2="249" y2="182" stroke="#9a3f2b" stroke-width="1.4" marker-end="url(#ar3)"/>
+
+  <!-- contract -->
+  <rect x="112" y="186" width="274" height="52" rx="5" fill="#141416"/>
+  <text x="249" y="204" font-size="9" font-weight="700" fill="#fff" text-anchor="middle" font-family="Helvetica">THE CONTRACT</text>
+  <text x="249" y="218" font-size="8" fill="#7dd3fc" text-anchor="middle" font-family="Menlo,monospace">POST /api/gis/plot</text>
+  <text x="249" y="231" font-size="7" fill="#a8a29e" text-anchor="middle" font-family="Helvetica">One JSON document per parcel · validated by Pydantic</text>
+
+  <line x1="249" y1="240" x2="249" y2="260" stroke="#141416" stroke-width="1.2" marker-end="url(#ar2)"/>
+
+  <!-- Stage 3 -->
+  <text x="6" y="272" font-size="7.5" font-weight="700" fill="#047857" font-family="Helvetica">3 · GEOMETRY ENGINE (BUILT &amp; TESTED)</text>
+  <rect x="6" y="278" width="688" height="46" rx="5" fill="#f2fbf7" stroke="#a7f3d0"/>
+  <text x="18" y="294" font-size="7.5" font-family="Helvetica">Units → metres</text>
+  <text x="106" y="294" font-size="7.5" font-family="Helvetica">Bearings → WCB</text>
+  <text x="200" y="294" font-size="7.5" font-family="Helvetica">Traverse + Bowditch</text>
+  <text x="312" y="294" font-size="7.5" font-family="Helvetica">Ladder → ring</text>
+  <text x="404" y="294" font-size="7.5" font-family="Helvetica">Area reconcile</text>
+  <text x="496" y="294" font-size="7.5" font-family="Helvetica">Assemble village</text>
+  <text x="596" y="294" font-size="7.5" font-family="Helvetica">→ GeoJSON</text>
+  <line x1="18" y1="301" x2="676" y2="301" stroke="#a7f3d0"/>
+  <text x="18" y="315" font-size="7" fill="#065f46" font-family="Helvetica">Every output carries: accuracy class · provenance · positional uncertainty · validation flags</text>
+
+  <!-- right column: what OCR must NOT do -->
+  <rect x="352" y="20" width="342" height="140" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="364" y="37" font-size="8.5" font-weight="700" font-family="Helvetica">What OCR must NOT try to do</text>
+  <line x1="364" y1="43" x2="684" y2="43" stroke="#e5e1da"/>
+  <text x="364" y="57" font-size="7.5" font-family="Helvetica">✗ Convert units — the engine owns the bigha problem</text>
+  <text x="364" y="70" font-size="7.5" font-family="Helvetica">✗ Convert bearings — send the notation as written</text>
+  <text x="364" y="83" font-size="7.5" font-family="Helvetica">✗ Guess a CRS — say what the sheet says, or say nothing</text>
+  <text x="364" y="96" font-size="7.5" font-family="Helvetica">✗ Close a traverse or "fix" a measurement</text>
+  <text x="364" y="109" font-size="7.5" font-family="Helvetica">✗ Drop a leg that looks wrong — misclosure is the signal</text>
+  <text x="364" y="122" font-size="7.5" font-family="Helvetica">✗ Reorder offsets — send seq if the sketch numbers them</text>
+  <text x="364" y="138" font-size="7" fill="#6b6560" font-family="Helvetica">Every one of these destroys a validation the engine performs.</text>
+  <text x="364" y="150" font-size="7" fill="#6b6560" font-family="Helvetica">Transcribe faithfully; let the engine interpret.</text>
+</svg>
+<figcaption><strong>Figure 2.</strong> The handoff. The dashed box is the only part not yet built. Because the boundary is a validated JSON schema rather than a function call, the geometry side was developed and tested to completion against hand-authored documents.</figcaption>
+</figure>
+
+<h3>3.1 The contract, concretely</h3>
+<pre><span class="c">// One object per parcel. POST an array of them to /api/gis/plot</span>
+{
+  <span class="k">"survey_no"</span>: <span class="s">"201/5"</span>,            <span class="c">// join key — preserve hissa exactly</span>
+  <span class="k">"village"</span>: <span class="s">"Hosahalli"</span>, <span class="k">"tehsil"</span>: <span class="s">"Mysuru"</span>,
+  <span class="k">"district"</span>: <span class="s">"Mysuru"</span>, <span class="k">"state"</span>: <span class="s">"Karnataka"</span>,
+  <span class="k">"lgd_village_code"</span>: <span class="s">"613204"</span>,
+  <span class="k">"owner_name"</span>: <span class="s">"Siddaraju H M"</span>,
+  <span class="k">"area_value"</span>: <span class="n">124.29</span>, <span class="k">"area_unit"</span>: <span class="s">"guntha"</span>,   <span class="c">// the independent check</span>
+
+  <span class="k">"boundaries"</span>: {                        <span class="c">// Tier D — raw text, always send it</span>
+    <span class="k">"east"</span>: <span class="s">"Survey No. 201/6"</span>, <span class="k">"west"</span>: <span class="s">"Survey No. 201/4"</span>,
+    <span class="k">"south"</span>: <span class="s">"Survey No. 201/2"</span>, <span class="k">"north"</span>: <span class="s">"Survey No. 201/8"</span>
+  },
+
+  <span class="c">// Then ONE of the following three, whichever the document has:</span>
+
+  <span class="k">"coordinates"</span>: { <span class="k">"points"</span>: [[<span class="n">76.639</span>,<span class="n">12.295</span>], <span class="c">/*…*/</span>],
+                    <span class="k">"crs"</span>: <span class="s">"WGS84"</span>, <span class="k">"order"</span>: <span class="s">"xy"</span> },
+
+  <span class="k">"traverse"</span>: { <span class="k">"legs"</span>: [
+        { <span class="k">"bearing"</span>: <span class="s">"N85°45'E"</span>, <span class="k">"distance"</span>: <span class="n">571.8</span>, <span class="k">"unit"</span>: <span class="s">"links"</span> },
+        { <span class="k">"bearing"</span>: <span class="s">"S02°30'E"</span>, <span class="k">"distance"</span>: <span class="n">522.1</span>, <span class="k">"unit"</span>: <span class="s">"links"</span> }  <span class="c">/*…*/</span>
+     ], <span class="k">"distance_unit"</span>: <span class="s">"links"</span>, <span class="k">"adjustment"</span>: <span class="s">"bowditch"</span> },
+
+  <span class="k">"chain_offset"</span>: { <span class="k">"base_length"</span>: <span class="n">572.2</span>, <span class="k">"unit"</span>: <span class="s">"links"</span>,
+     <span class="k">"offsets"</span>: [
+        { <span class="k">"chainage"</span>: <span class="n">0.0</span>,   <span class="k">"offset"</span>: <span class="n">0.0</span>,  <span class="k">"side"</span>: <span class="s">"L"</span>, <span class="k">"seq"</span>: <span class="n">0</span> },
+        { <span class="k">"chainage"</span>: <span class="n">572.2</span>, <span class="k">"offset"</span>: <span class="n">0.0</span>,  <span class="k">"side"</span>: <span class="s">"L"</span>, <span class="k">"seq"</span>: <span class="n">1</span> },
+        { <span class="k">"chainage"</span>: <span class="n">619.7</span>, <span class="k">"offset"</span>: <span class="n">522.1</span>,<span class="k">"side"</span>: <span class="s">"L"</span>, <span class="k">"seq"</span>: <span class="n">2</span> },
+        { <span class="k">"chainage"</span>: <span class="n">-28.1</span>, <span class="k">"offset"</span>: <span class="n">497.3</span>,<span class="k">"side"</span>: <span class="s">"L"</span>, <span class="k">"seq"</span>: <span class="n">3</span> }  <span class="c">// negative is legal</span>
+     ] },
+
+  <span class="k">"control_points"</span>: [                     <span class="c">// optional but transformative</span>
+     { <span class="k">"local"</span>: [<span class="n">0</span>,<span class="n">0</span>], <span class="k">"lon"</span>: <span class="n">76.6394</span>, <span class="k">"lat"</span>: <span class="n">12.2958</span>, <span class="k">"label"</span>: <span class="s">"SW pillar"</span> }
+  ]
+}</pre>
+
+<h3>3.2 The eight rules the extraction stage must follow</h3>
+<table>
+<tr><th style="width:8mm">#</th><th style="width:46mm">Rule</th><th>Reason</th></tr>
+<tr><td class="b">1</td><td>Transcribe, do not interpret</td><td>Send <code>"N45°30'E"</code>, not <code>45.5</code>. The engine parses both notations and records which was on the page.</td></tr>
+<tr><td class="b">2</td><td>Never convert units</td><td>Send the number and the unit written. Unit conversion is state-dependent and the engine refuses unsafe cases rather than guessing.</td></tr>
+<tr><td class="b">3</td><td>Never repair a measurement</td><td>A leg that looks wrong <em>is</em> the finding. Closure analysis detects it; silently fixing it destroys the detector.</td></tr>
+<tr><td class="b">4</td><td>Preserve order and sequence</td><td>Legs in traverse order; offsets with <code>seq</code> when the sketch numbers corners. Reordering changes the polygon.</td></tr>
+<tr><td class="b">5</td><td>State the CRS or omit it</td><td>A guessed CRS is worse than none. Section 5.2 quantifies this at 195 km.</td></tr>
+<tr><td class="b">6</td><td>Send all four boundaries verbatim</td><td>Including "Nala" and "Village road". Non-parcel edges are information, not noise.</td></tr>
+<tr><td class="b">7</td><td>Emit per-field confidence</td><td>Routes low-confidence fields to officer review before geometry is attempted.</td></tr>
+<tr><td class="b">8</td><td>Batch by village, not by page</td><td>The adjacency solver needs the whole village at once; parcels georeference each other.</td></tr>
+</table>
+
+<h3>3.3 What happens to a document that fails</h3>
+<p class="small">
+Nothing is silently dropped. A document that carries no usable source still returns a
+record, with <code>method: "none"</code>, an accuracy class, and a flag naming exactly what
+is missing and what to do about it — for example
+<em>"The document carries no coordinates, no traverse, no chain-and-offset measurements and
+no boundary description. Locate the tippan / Field Measurement Book for this survey number
+— the textual extract alone never contains geometry."</em>
+That flag is the work queue for the record room.
+</p>
+</section>
+
+
+<!-- ============================== 4. ARCHITECTURE ============================== -->
+<section>
+<div class="eyebrow">Section 4</div>
+<h2>System architecture</h2>
+
+<figure>
+<svg viewBox="0 0 700 452" width="100%">
+  <defs>
+    <marker id="a4" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#57534e"/>
+    </marker>
+  </defs>
+
+  <!-- L1 -->
+  <rect x="4" y="6" width="692" height="52" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="14" y="21" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">SOURCE DOCUMENTS</text>
+  <rect x="14" y="26" width="128" height="24" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="78" y="41" font-size="8" text-anchor="middle" font-family="Helvetica">7/12 · Jamabandi</text>
+  <rect x="150" y="26" width="128" height="24" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="214" y="41" font-size="8" text-anchor="middle" font-family="Helvetica">Tippan · FMB</text>
+  <rect x="286" y="26" width="128" height="24" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="350" y="41" font-size="8" text-anchor="middle" font-family="Helvetica">Resurvey / DGPS</text>
+  <rect x="422" y="26" width="128" height="24" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="486" y="41" font-size="8" text-anchor="middle" font-family="Helvetica">Cadastral map sheet</text>
+  <rect x="558" y="26" width="128" height="24" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="622" y="41" font-size="8" text-anchor="middle" font-family="Helvetica">Legacy PDF</text>
+
+  <line x1="350" y1="58" x2="350" y2="70" stroke="#57534e" stroke-width="1.1" marker-end="url(#a4)"/>
+
+  <!-- L2 -->
+  <rect x="4" y="74" width="692" height="56" rx="5" fill="#fff" stroke="#9a3f2b" stroke-dasharray="4 3"/>
+  <text x="14" y="89" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">EXTRACTION LAYER — NOT YET BUILT</text>
+  <rect x="14" y="94" width="158" height="28" rx="4" fill="#fdf8f6" stroke="#e8d5cf"/>
+  <text x="93" y="105" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Preprocess</text>
+  <text x="93" y="116" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">deskew · dewarp · bleed-through</text>
+  <rect x="180" y="94" width="158" height="28" rx="4" fill="#fdf8f6" stroke="#e8d5cf"/>
+  <text x="259" y="105" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">OCR / HTR</text>
+  <text x="259" y="116" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">Sarvam · 22 languages · tables</text>
+  <rect x="346" y="94" width="158" height="28" rx="4" fill="#fdf8f6" stroke="#e8d5cf"/>
+  <text x="425" y="105" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Ladder / leg parse</text>
+  <text x="425" y="116" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">tippan diagram → numbers</text>
+  <rect x="512" y="94" width="174" height="28" rx="4" fill="#fdf8f6" stroke="#e8d5cf"/>
+  <text x="599" y="105" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Field mapping + confidence</text>
+  <text x="599" y="116" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">→ the JSON contract</text>
+
+  <line x1="350" y1="130" x2="350" y2="142" stroke="#57534e" stroke-width="1.1" marker-end="url(#a4)"/>
+  <rect x="252" y="144" width="196" height="18" rx="4" fill="#141416"/>
+  <text x="350" y="157" font-size="8" fill="#fff" text-anchor="middle" font-family="Menlo,monospace">DocumentIn (Pydantic schema)</text>
+  <line x1="350" y1="162" x2="350" y2="174" stroke="#57534e" stroke-width="1.1" marker-end="url(#a4)"/>
+
+  <!-- L3 -->
+  <rect x="4" y="178" width="692" height="128" rx="5" fill="#f2fbf7" stroke="#a7f3d0"/>
+  <text x="14" y="193" font-size="7.5" font-weight="700" fill="#047857" font-family="Helvetica">GEOMETRY ENGINE — BUILT, TESTED, 2,983 LOC</text>
+
+  <rect x="14" y="198" width="162" height="46" rx="4" fill="#fff" stroke="#a7f3d0"/>
+  <text x="24" y="211" font-size="8" font-weight="700" font-family="Menlo,monospace">survey_math.py</text>
+  <text x="24" y="222" font-size="7" fill="#4b5563" font-family="Helvetica">bearings · units · traverse</text>
+  <text x="24" y="232" font-size="7" fill="#4b5563" font-family="Helvetica">Bowditch · ladder · Helmert</text>
+  <text x="24" y="241" font-size="6.5" fill="#96908a" font-family="Helvetica">662 lines</text>
+
+  <rect x="184" y="198" width="162" height="46" rx="4" fill="#fff" stroke="#a7f3d0"/>
+  <text x="194" y="211" font-size="8" font-weight="700" font-family="Menlo,monospace">crs_india.py</text>
+  <text x="194" y="222" font-size="7" fill="#4b5563" font-family="Helvetica">14 India zones · 6 UTM zones</text>
+  <text x="194" y="232" font-size="7" fill="#4b5563" font-family="Helvetica">datum shift · zone inference</text>
+  <text x="194" y="241" font-size="6.5" fill="#96908a" font-family="Helvetica">358 lines</text>
+
+  <rect x="354" y="198" width="162" height="46" rx="4" fill="#fff" stroke="#a7f3d0"/>
+  <text x="364" y="211" font-size="8" font-weight="700" font-family="Menlo,monospace">document_geometry.py</text>
+  <text x="364" y="222" font-size="7" fill="#4b5563" font-family="Helvetica">tier detection · ring build</text>
+  <text x="364" y="232" font-size="7" fill="#4b5563" font-family="Helvetica">area reconcile · accuracy class</text>
+  <text x="364" y="241" font-size="6.5" fill="#96908a" font-family="Helvetica">629 lines</text>
+
+  <rect x="524" y="198" width="162" height="46" rx="4" fill="#fff" stroke="#a7f3d0"/>
+  <text x="534" y="211" font-size="8" font-weight="700" font-family="Menlo,monospace">village_assembler.py</text>
+  <text x="534" y="222" font-size="7" fill="#4b5563" font-family="Helvetica">adjacency graph · fit · refine</text>
+  <text x="534" y="232" font-size="7" fill="#4b5563" font-family="Helvetica">uncertainty propagation</text>
+  <text x="534" y="241" font-size="6.5" fill="#96908a" font-family="Helvetica">688 lines</text>
+
+  <rect x="14" y="252" width="672" height="20" rx="4" fill="#fff" stroke="#a7f3d0"/>
+  <text x="24" y="265" font-size="7.5" font-family="Helvetica">
+    <tspan font-weight="700">Libraries:</tspan> shapely 2.1 (predicates, union, buffer, distance) · pyproj 3.7 (EPSG database, datum transforms) — no PostGIS required yet
+  </text>
+
+  <rect x="14" y="278" width="672" height="22" rx="4" fill="#141416"/>
+  <text x="24" y="292" font-size="7.5" fill="#e8e4df" font-family="Helvetica">
+    <tspan font-weight="700" fill="#fff">Output invariant:</tspan> every parcel carries accuracy_class · method · provenance · position_uncertainty_m · area reconciliation · validation flags
+  </text>
+
+  <line x1="350" y1="306" x2="350" y2="318" stroke="#57534e" stroke-width="1.1" marker-end="url(#a4)"/>
+
+  <!-- L4 -->
+  <rect x="4" y="322" width="692" height="54" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="14" y="337" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">API — FASTAPI</text>
+  <rect x="14" y="342" width="106" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="67" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">POST /plot</text>
+  <rect x="128" y="342" width="106" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="181" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">POST /upload</text>
+  <rect x="242" y="342" width="106" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="295" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">POST /parcel</text>
+  <rect x="356" y="342" width="106" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="409" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">GET /requirements</text>
+  <rect x="470" y="342" width="106" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="523" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">GET /crs</text>
+  <rect x="584" y="342" width="102" height="26" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="635" y="358" font-size="7.5" text-anchor="middle" font-family="Menlo,monospace">/units/convert</text>
+
+  <line x1="350" y1="376" x2="350" y2="388" stroke="#57534e" stroke-width="1.1" marker-end="url(#a4)"/>
+
+  <!-- L5 -->
+  <rect x="4" y="392" width="692" height="56" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="14" y="407" font-size="7.5" font-weight="700" fill="#9a3f2b" font-family="Helvetica">PRESENTATION — NEXT.JS 14 · REACT 18 · LEAFLET</text>
+  <rect x="14" y="412" width="162" height="28" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="95" y="424" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Upload panel</text>
+  <text x="95" y="435" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">drop extraction JSON</text>
+  <rect x="184" y="412" width="162" height="28" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="265" y="424" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Map</text>
+  <text x="265" y="435" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">coloured by accuracy class</text>
+  <rect x="354" y="412" width="162" height="28" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="435" y="424" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Provenance inspector</text>
+  <text x="435" y="435" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">how each polygon was derived</text>
+  <rect x="524" y="412" width="162" height="28" rx="4" fill="#fff" stroke="#dcd8d0"/>
+  <text x="605" y="424" font-size="8" text-anchor="middle" font-weight="700" font-family="Helvetica">Adjacency table</text>
+  <text x="605" y="435" font-size="7" text-anchor="middle" fill="#6b6560" font-family="Helvetica">the constraint network</text>
+</svg>
+<figcaption><strong>Figure 3.</strong> Layered architecture. The dashed layer is the only unbuilt one. The Pydantic schema between layers 2 and 3 is the contract that let the geometry work finish independently.</figcaption>
+</figure>
+</section>
+
+
+<!-- ============================== 5. ALGORITHMS ============================== -->
+<section>
+<div class="eyebrow">Section 5</div>
+<h2>How the engine works</h2>
+
+<h3>5.1 Traverse reconstruction and the closure check</h3>
+<p>
+A traverse is a walk round the boundary: from each corner, a bearing and a distance to the
+next. Each leg becomes a displacement — <code>ΔE = L·sin(θ)</code>,
+<code>ΔN = L·cos(θ)</code> — and the walk should return to where it began. It never quite
+does. The distance by which it fails is the <strong>misclosure</strong>, and it is the
+single most valuable number in the whole document, because it detects transcription errors
+before anything is plotted.
+</p>
+
+<figure>
+<svg viewBox="0 0 700 200" width="100%">
+  <!-- panel 1 -->
+  <text x="8" y="13" font-size="8" font-weight="700" font-family="Helvetica">a. The walk does not close</text>
+  <rect x="8" y="20" width="216" height="168" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <polyline points="40,160 180,160 190,70 60,52" fill="none" stroke="#1d4ed8" stroke-width="2"/>
+  <line x1="60" y1="52" x2="40" y2="130" stroke="#1d4ed8" stroke-width="2"/>
+  <line x1="40" y1="130" x2="40" y2="160" stroke="#be123c" stroke-width="2.4" stroke-dasharray="3 2"/>
+  <circle cx="40" cy="160" r="3" fill="#141416"/>
+  <text x="24" y="176" font-size="7" font-family="Helvetica">start</text>
+  <circle cx="40" cy="130" r="3" fill="#be123c"/>
+  <text x="48" y="126" font-size="7" fill="#be123c" font-family="Helvetica">end</text>
+  <text x="52" y="146" font-size="7" fill="#be123c" font-weight="700" font-family="Helvetica">misclosure</text>
+  <text x="96" y="174" font-size="7" fill="#6b6560" font-family="Helvetica">N85°E · 571.8 links</text>
+
+  <!-- panel 2 -->
+  <text x="240" y="13" font-size="8" font-weight="700" font-family="Helvetica">b. Bowditch distributes the error</text>
+  <rect x="240" y="20" width="216" height="168" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <polyline points="272,160 412,160 422,70 292,52 272,160" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="3 2"/>
+  <polyline points="272,160 411,158 420,71 291,54 272,160" fill="#04785715" stroke="#047857" stroke-width="2"/>
+  <circle cx="272" cy="160" r="3" fill="#047857"/>
+  <text x="256" y="176" font-size="7" font-family="Helvetica">closed</text>
+  <text x="300" y="112" font-size="7" fill="#047857" font-family="Helvetica">each leg corrected in</text>
+  <text x="300" y="122" font-size="7" fill="#047857" font-family="Helvetica">proportion to its length</text>
+  <text x="256" y="40" font-size="6.5" fill="#96908a" font-family="Helvetica">grey = raw · green = adjusted</text>
+
+  <!-- panel 3 -->
+  <text x="472" y="13" font-size="8" font-weight="700" font-family="Helvetica">c. The grade is the error detector</text>
+  <rect x="472" y="20" width="220" height="168" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="484" y="40" font-size="7.5" font-family="Helvetica">Relative precision = perimeter ÷ misclosure</text>
+  <line x1="484" y1="48" x2="680" y2="48" stroke="#e5e1da"/>
+  <rect x="484" y="56" width="10" height="10" fill="#047857"/>
+  <text x="500" y="65" font-size="7.5" font-family="Helvetica">≥ 1:5000 — survey grade</text>
+  <rect x="484" y="72" width="10" height="10" fill="#65a30d"/>
+  <text x="500" y="81" font-size="7.5" font-family="Helvetica">≥ 1:1000 — cadastral</text>
+  <rect x="484" y="88" width="10" height="10" fill="#d97706"/>
+  <text x="500" y="97" font-size="7.5" font-family="Helvetica">≥ 1:200 — poor</text>
+  <rect x="484" y="104" width="10" height="10" fill="#be123c"/>
+  <text x="500" y="113" font-size="7.5" font-family="Helvetica">&lt; 1:200 — failed</text>
+  <rect x="484" y="124" width="196" height="54" rx="4" fill="#fff5f6" stroke="#fecdd3"/>
+  <text x="492" y="138" font-size="7" font-weight="700" fill="#9f1239" font-family="Helvetica">Measured on a real test:</text>
+  <text x="492" y="150" font-size="7" fill="#9f1239" font-family="Helvetica">one leg mis-read 500 → 560 links</text>
+  <text x="492" y="161" font-size="7" fill="#9f1239" font-family="Helvetica">turns 1:∞ into 1:26 — "failed"</text>
+  <text x="492" y="172" font-size="7" fill="#9f1239" font-family="Helvetica">The digit error is caught instantly.</text>
+</svg>
+<figcaption><strong>Figure 4.</strong> Traverse, adjustment and grading. The Bowditch (compass) rule corrects each leg in proportion to its length — the right choice when angles and distances are of similar reliability, as in a chain-and-compass cadastral survey.</figcaption>
+</figure>
+
+<h3>5.2 Coordinate reference systems — why this is not a detail</h3>
+<p>
+Legacy Indian cadastral sheets are not on WGS84. They are on Everest 1830 / Kalianpur
+datums, in the Survey of India's <strong>India zones</strong> — Lambert Conformal Conic
+bands with standard parallels at 39°30′, 32°30′, 26°, 19° and 12° N.
+</p>
+
+<div class="box warn">
+<h4>The cost of getting it wrong, measured</h4>
+<p style="margin:0 0 5pt">A parcel at Pune (18.5089 N, 73.9259 E) on Kalianpur 1975 / India zone IIIa has easting 2,102,832 m, northing 871,056 m.</p>
+<table style="margin:0">
+<tr><td style="width:66mm">Read correctly</td><td class="b">18.5089 N, 73.9259 E &mdash; Pune</td></tr>
+<tr><td>Read as UTM 43N / WGS84</td><td class="b" style="color:#be123c">7.6345 N, 89.3833 E &mdash; the Bay of Bengal</td></tr>
+<tr><td>Read on the wrong Kalianpur datum</td><td class="b" style="color:#be123c">195 km away</td></tr>
+</table>
+</div>
+
+<p class="small">
+The engine builds its CRS registry from pyproj's EPSG database at import rather than
+hard-coding it, so it cannot drift from the authority. It covers all 14 India zones EPSG
+publishes, all six UTM zones spanning the country (42N–47N), and EPSG:7755 (WGS 84 / India
+NSF LCC) for national work. It selects the correct UTM zone per parcel from that parcel's
+own longitude, and can infer which legacy zone an undated sheet most likely used from the
+EPSG bounding boxes. Round-trip fidelity measured across Pune, Delhi, Kolkata and Madurai
+is 0.2–1.1 mm. It <strong>refuses</strong> an ambiguous name: "India zone IIIa" exists on
+both Kalianpur 1880 and 1975 and they are hundreds of metres apart.
+</p>
+
+<h3>5.3 The chain-and-offset ladder</h3>
+<figure>
+<svg viewBox="0 0 700 176" width="100%">
+  <rect x="4" y="6" width="340" height="164" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="16" y="22" font-size="8" font-weight="700" font-family="Helvetica">What the tippan draws</text>
+  <line x1="40" y1="110" x2="300" y2="110" stroke="#141416" stroke-width="2"/>
+  <text x="150" y="124" font-size="7" font-family="Helvetica">base line — 400 links</text>
+  <circle cx="40" cy="110" r="3.4" fill="#141416"/><text x="30" y="104" font-size="7" font-family="Helvetica">A</text>
+  <circle cx="300" cy="110" r="3.4" fill="#141416"/><text x="304" y="104" font-size="7" font-family="Helvetica">B</text>
+  <g stroke="#1d4ed8" stroke-width="1.3">
+    <line x1="80" y1="110" x2="80" y2="62"/><line x1="140" y1="110" x2="140" y2="40"/>
+    <line x1="205" y1="110" x2="205" y2="48"/><line x1="265" y1="110" x2="265" y2="72"/>
+    <line x1="110" y1="110" x2="110" y2="146"/><line x1="230" y1="110" x2="230" y2="138"/>
+  </g>
+  <g fill="#1d4ed8" font-size="6.5" font-family="Helvetica">
+    <text x="66" y="58">80</text><text x="126" y="36">150</text>
+    <text x="192" y="44">140</text><text x="252" y="68">95</text>
+    <text x="96" y="158">60</text><text x="216" y="150">70</text>
+  </g>
+  <g fill="#6b6560" font-size="6.5" font-family="Helvetica">
+    <text x="72" y="121">40</text><text x="132" y="121">100</text>
+    <text x="197" y="121">165</text><text x="257" y="121">225</text>
+  </g>
+  <text x="16" y="164" font-size="6.5" fill="#96908a" font-family="Helvetica">blue = offset (perpendicular) · grey = chainage (along the base)</text>
+
+  <text x="356" y="18" font-size="16" fill="#96908a" font-family="Helvetica">→</text>
+
+  <rect x="380" y="6" width="316" height="164" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <text x="392" y="22" font-size="8" font-weight="700" font-family="Helvetica">What the engine reconstructs</text>
+  <polygon points="416,106 456,58 516,36 581,44 641,68 606,134 486,142"
+           fill="#10b98126" stroke="#047857" stroke-width="1.8"/>
+  <g fill="#047857">
+    <circle cx="416" cy="106" r="2.6"/><circle cx="456" cy="58" r="2.6"/>
+    <circle cx="516" cy="36" r="2.6"/><circle cx="581" cy="44" r="2.6"/>
+    <circle cx="641" cy="68" r="2.6"/><circle cx="606" cy="134" r="2.6"/>
+    <circle cx="486" cy="142" r="2.6"/>
+  </g>
+  <text x="392" y="160" font-size="7" fill="#6b6560" font-family="Helvetica">Left-side points ascending, right-side descending — a closed ring.</text>
+  <text x="392" y="169" font-size="6.5" fill="#96908a" font-family="Helvetica">Exact shape and area. No position, and no orientation unless the base bearing is stated.</text>
+</svg>
+<figcaption><strong>Figure 5.</strong> The "ladder to map" method. The base line becomes the local x-axis and each offset a y-coordinate. Points are ordered up the left side and back down the right so the ring traces the boundary once without self-intersecting; if the sketch numbers its corners, that order is used instead.</figcaption>
+</figure>
+
+<h3>5.4 The accuracy class — the output invariant</h3>
+<p class="small">
+Every parcel leaves the engine labelled with how its geometry was obtained. A parcel
+positioned by solving the adjacency network must never look, in the database or on the
+map, like one measured with a total station.
+</p>
+<table>
+<tr><th style="width:44mm">Class</th><th>Meaning</th><th style="width:26mm">Position error</th></tr>
+<tr><td><span class="pill p-green">surveyed</span></td><td>Coordinates taken directly from the document</td><td>Source accuracy</td></tr>
+<tr><td><span class="pill p-blue">reconstructed_anchored</span></td><td>Shape rebuilt from measurements, placed using control points</td><td>Control point accuracy</td></tr>
+<tr><td><span class="pill p-violet">reconstructed_floating</span></td><td>Shape and area exact; not yet placed on the ground</td><td>Not placed</td></tr>
+<tr><td><span class="pill p-amber">inferred</span></td><td>Position estimated from adjoining parcels and declared area</td><td>Metres — reported per parcel</td></tr>
+<tr><td><span class="pill p-grey">none</span></td><td>Document carries nothing geometry can be derived from</td><td>—</td></tr>
+</table>
+</section>
+
+
+<!-- ============================== 6. ASSEMBLY ============================== -->
+<section>
+<div class="eyebrow">Section 6</div>
+<h2>How a village assembles itself</h2>
+
+<p style="margin-top:9pt">
+This is the part that makes "everything from the documents, nothing external" actually
+work. A tippan gives an exact shape but no position. A 7/12 gives an exact area and the
+four boundaries but no shape. Neither is plottable alone — but across a village they form
+a constraint network, and <strong>one anchored parcel places all of them</strong>.
+</p>
+
+<figure>
+<svg viewBox="0 0 700 210" width="100%">
+  <!-- panel a -->
+  <text x="6" y="13" font-size="8" font-weight="700" font-family="Helvetica">a. One anchor, the rest floating</text>
+  <rect x="6" y="20" width="222" height="182" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <polygon points="30,150 92,150 92,190 30,190" fill="#10b98140" stroke="#047857" stroke-width="1.8"/>
+  <text x="61" y="174" font-size="7.5" text-anchor="middle" font-weight="700" font-family="Helvetica">124/1</text>
+  <text x="61" y="200" font-size="6.5" text-anchor="middle" fill="#047857" font-family="Helvetica">has coordinates</text>
+  <g opacity=".55">
+    <polygon points="120,44 178,40 182,80 122,84" fill="#a78bfa30" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="3 2"/>
+    <polygon points="122,96 176,94 178,132 124,134" fill="#a78bfa30" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="3 2"/>
+    <polygon points="120,146 174,148 172,188 118,186" fill="#a78bfa30" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="3 2"/>
+    <polygon points="30,44 88,46 86,88 28,86" fill="#a78bfa30" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="3 2"/>
+    <polygon points="30,98 88,100 86,138 28,136" fill="#a78bfa30" stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="3 2"/>
+  </g>
+  <text x="150" y="66" font-size="6.5" text-anchor="middle" fill="#6d28d9" font-family="Helvetica">exact shape</text>
+  <text x="150" y="76" font-size="6.5" text-anchor="middle" fill="#6d28d9" font-family="Helvetica">no position</text>
+
+  <!-- panel b -->
+  <text x="240" y="13" font-size="8" font-weight="700" font-family="Helvetica">b. Grow outward along the network</text>
+  <rect x="240" y="20" width="222" height="182" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <polygon points="264,150 326,150 326,190 264,190" fill="#10b98140" stroke="#047857" stroke-width="1.8"/>
+  <text x="295" y="174" font-size="7.5" text-anchor="middle" font-weight="700" font-family="Helvetica">124/1</text>
+  <polygon points="264,108 326,108 326,150 264,150" fill="#f59e0b33" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="295" y="132" font-size="7" text-anchor="middle" font-family="Helvetica">124/4</text>
+  <polygon points="326,150 396,150 396,190 326,190" fill="#f59e0b33" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="361" y="174" font-size="7" text-anchor="middle" font-family="Helvetica">124/2</text>
+  <text x="295" y="100" font-size="6.5" text-anchor="middle" fill="#b45309" font-family="Helvetica">"north: 124/4"</text>
+  <text x="404" y="172" font-size="6.5" fill="#b45309" font-family="Helvetica">"east:</text>
+  <text x="404" y="181" font-size="6.5" fill="#b45309" font-family="Helvetica">124/2"</text>
+  <g opacity=".5">
+    <polygon points="326,108 396,108 396,150 326,150" fill="none" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="2 3"/>
+    <polygon points="396,150 448,150 448,190 396,190" fill="none" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="2 3"/>
+  </g>
+  <text x="352" y="46" font-size="6.5" fill="#6b6560" font-family="Helvetica">each placed parcel becomes</text>
+  <text x="352" y="56" font-size="6.5" fill="#6b6560" font-family="Helvetica">an anchor for the next pass</text>
+
+  <!-- panel c -->
+  <text x="474" y="13" font-size="8" font-weight="700" font-family="Helvetica">c. Refine against all neighbours</text>
+  <rect x="474" y="20" width="222" height="182" rx="5" fill="#faf9f6" stroke="#dcd8d0"/>
+  <polygon points="498,150 560,150 560,190 498,190" fill="#10b98140" stroke="#047857" stroke-width="1.8"/>
+  <polygon points="498,108 560,108 560,150 498,150" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="498,62 560,62 560,108 498,108" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="560,150 630,150 630,190 560,190" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="560,108 630,108 630,150 560,150" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="560,62 630,62 630,108 560,108" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="630,150 674,150 674,190 630,190" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <polygon points="630,108 674,108 674,150 630,150" fill="#f59e0b33" stroke="#b45309" stroke-width="1.4"/>
+  <circle cx="595" cy="128" r="16" fill="none" stroke="#b45309" stroke-width="1" stroke-dasharray="2 3"/>
+  <text x="486" y="44" font-size="6.5" fill="#6b6560" font-family="Helvetica">a parcel fitted against one neighbour can slide</text>
+  <text x="486" y="54" font-size="6.5" fill="#6b6560" font-family="Helvetica">along the shared edge; re-fitting against all of</text>
+  <text x="486" y="200" font-size="6.5" fill="#b45309" font-family="Helvetica">dashed circle = remaining positional uncertainty, to scale</text>
+</svg>
+<figcaption><strong>Figure 6.</strong> Village assembly. Growth passes place every parcel that has at least one mapped neighbour; refinement passes then re-fit each one against all of its neighbours simultaneously, which is what removes the slide-along-the-edge ambiguity.</figcaption>
+</figure>
+
+<h3>6.1 The cost function</h3>
+<p class="small">Placement is found by minimising a cost, expressed entirely in square metres so the terms are commensurable:</p>
+<table>
+<tr><th style="width:44mm">Term</th><th>Rationale</th></tr>
+<tr><td class="b">Overlap × 12</td><td>Two parcels cannot occupy the same ground. Weighted heavily because a placement asserting they do is simply wrong.</td></tr>
+<tr><td class="b">Gap²</td><td>The record says these parcels touch; a gap is a violation.</td></tr>
+<tr><td class="b">(1 − cos θ) × L² × 0.5</td><td>Directional term. If the record says the neighbour is west, the parcel must sit east of it.</td></tr>
+<tr><td class="b">− shared edge fraction × L² × 0.30</td><td>Reward. Adjoining parcels do not merely touch at a point; they share a whole edge because one was surveyed off the other. <strong>Bounded</strong> — an unbounded version lets a parcel slide along its neighbour collecting contact, which made results worse.</td></tr>
+</table>
+<p class="small">Optimisation is a deterministic compass (pattern) search on translation, wrapped in a
+rotation sweep only when orientation is genuinely unknown — a tippan with no stated base
+bearing. A traverse of true bearings already knows where north is, and rotating it would
+discard real information.</p>
+
+<h3>6.2 Positional uncertainty</h3>
+<p class="small">
+Each placement is probed in eight directions to find how far the parcel can move before the
+fit measurably worsens — a parcel constrained on three sides cannot move; one with a single
+neighbour can slide. That local slack is then <strong>propagated along the inference
+chain</strong>, because a parcel placed off a parcel placed off the anchor inherits its
+parent's error, exactly as in any survey network. A calibration factor of 2.5 is applied
+to the local term, validated against ground truth so the figure over-reports rather than
+under-reports. An error bar that is confidently too small is worse than none.
+</p>
+</section>
+
+
+<!-- ============================== 7. VALIDATION ============================== -->
+<section>
+<div class="eyebrow">Section 7</div>
+<h2>Validation and measured results</h2>
+
+<h3>7.1 The ground-truth test</h3>
+<p>
+A village is constructed with known geometry, converted into documents containing only
+bearings, distances, areas and boundaries, every position but one is discarded, and the
+engine is asked to rebuild it. The reconstruction is then compared against the original.
+Run it with <code>python tests/test_assembly_truth.py</code>.
+</p>
+
+<table>
+<tr><th>Scenario</th><th style="width:20mm">Parcels</th><th style="width:20mm">Anchors</th><th style="width:20mm">Placed</th><th style="width:26mm">Worst centroid error</th><th style="width:24mm">Area error</th></tr>
+<tr><td>Regular grid, all traverse</td><td>6</td><td>1</td><td class="b">6/6</td><td class="b" style="color:#047857">0.025 m</td><td>0.000 m²</td></tr>
+<tr><td>Irregular quadrilaterals, 2 rotation-unknown tippans</td><td>8</td><td>1</td><td class="b">8/8</td><td class="b" style="color:#b45309">≈16 m</td><td>&lt;0.03 m²</td></tr>
+</table>
+
+<div class="box">
+<h4>Why the two numbers differ, and why that is honest rather than a defect</h4>
+<p style="margin:0">
+When parcels tile regularly the constraint network is over-determined — each parcel is
+hemmed in on several sides and only one placement satisfies everything, so the fit is
+centimetre-exact. Irregular quadrilaterals leave genuine slack: several placements satisfy
+"touches on the correct side" almost equally well. <strong>Shape and area remain exact in
+both cases; only position degrades.</strong> Rather than tune the optimiser until a
+synthetic case looks good, the system measures the slack and reports it per parcel.
+</p>
+</div>
+
+<h3>7.2 Component tests performed during development</h3>
+<table>
+<tr><th style="width:52mm">Component</th><th>Test</th><th style="width:34mm">Result</th></tr>
+<tr><td>Bearing parser</td><td>20,016 random bearings, quadrantal ↔ whole-circle round trip</td><td class="b">0 failures, worst error 0.05″</td></tr>
+<tr><td>Unit conversions</td><td>Known identities: 40 guntha = 1 acre, 8 kanal = 1 acre, 100 links = 1 chain = 66 ft</td><td class="b">All exact</td></tr>
+<tr><td>Traverse</td><td>Perfect 100×50 m rectangle</td><td class="b">5000.0000 m², exact closure</td></tr>
+<tr><td>Error detection</td><td>One leg mis-transcribed 500 → 560 links</td><td class="b">1:26, graded "failed"</td></tr>
+<tr><td>Chain &amp; offset</td><td>Both-sided and one-sided ladders</td><td class="b">3000.00 / 2000.00 m² exact</td></tr>
+<tr><td>CRS round trip</td><td>WGS84 → legacy India zone → WGS84, four cities</td><td class="b">0.2–1.1 mm</td></tr>
+<tr><td>Helmert placement</td><td>Rotate 90°, scale 2 — area should quadruple</td><td class="b">10,000 → 40,000 m²</td></tr>
+<tr><td>Scale sanity check</td><td>Control points 2.67× too far apart</td><td class="b">Flagged, area tracks the fit</td></tr>
+<tr><td>API</td><td>All endpoints, valid and malformed input</td><td class="b">Correct codes and messages</td></tr>
+<tr><td>Frontend</td><td><code>tsc --noEmit</code> under strict mode</td><td class="b">Clean</td></tr>
+</table>
+
+<h3>7.3 Three real bugs found by testing, and what they teach</h3>
+<table>
+<tr><th style="width:46mm">Bug</th><th>Cause</th><th style="width:52mm">Lesson</th></tr>
+<tr><td class="b">Tippan documents silently produced no geometry</td><td><code>o.get("unit", default)</code> returns <code>None</code> when the key exists with a null value, so unit conversion failed</td><td>Serialised optional fields arrive as explicit nulls. Use falsiness, not <code>.get</code> defaults.</td></tr>
+<tr><td class="b">Negative chainage rejected as invalid</td><td>A validator asserted <code>chainage ≥ 0</code></td><td>A boundary corner can legitimately sit behind the base line's start station. Real tippans record this.</td></tr>
+<tr><td class="b">Whole villages failed to assemble</td><td>The neighbour regex required a leading digit, so non-numeric survey numbers never entered the adjacency graph</td><td>Match against the known survey numbers first. A parcel missing from the network is a parcel that never gets placed.</td></tr>
+</table>
+<p class="small">A fourth was caught by a formatting test: rounding 0.0999° to degrees-minutes-seconds produced <code>0°05'60.0"</code> instead of <code>0°06'00.0"</code> — the classic carry bug, fixed by rounding to tenths of a second before splitting.</p>
+</section>
+
+
+<!-- ============================== 8. STACK ============================== -->
+<section>
+<div class="eyebrow">Section 8</div>
+<h2>Technology stack</h2>
+
+<table>
+<tr><th style="width:34mm">Layer</th><th style="width:52mm">Technology</th><th>Why this choice</th></tr>
+<tr><td class="b" rowspan="4">Extraction<br/><span class="pill p-rose">to build</span></td><td>Sarvam Document Digitisation</td><td>Indian sovereign AI, 22 scheduled languages, handles merged cells and multi-level headers — which is what a ruled revenue register is</td></tr>
+<tr><td>OpenCV, DocTR</td><td>Deskew, dewarp, bleed-through removal on bound volumes</td></tr>
+<tr><td>Fine-tuned VLM</td><td>Modi, Kaithi and Urdu-nastaliq revenue hands — these are scripts, not scheduled languages, so no general OCR covers them</td></tr>
+<tr><td>Surya / Tesseract-Indic</td><td>Air-gapped fallback for states that forbid data egress</td></tr>
+
+<tr><td class="b" rowspan="4">Geometry<br/><span class="pill p-green">built</span></td><td>Python 3.11</td><td>Same runtime as the existing backend</td></tr>
+<tr><td>shapely 2.1</td><td>Geometry predicates — intersection, union, distance, buffer. The same operations PostGIS exposes, so the port later is mechanical</td></tr>
+<tr><td>pyproj 3.7</td><td>The EPSG database and datum transforms. Registry is built from it at import so it cannot drift</td></tr>
+<tr><td>Pure Python optimiser</td><td>Deterministic compass search. Avoids a scipy dependency for a 2-parameter fit</td></tr>
+
+<tr><td class="b" rowspan="3">API<br/><span class="pill p-green">built</span></td><td>FastAPI</td><td>Already in the project; Pydantic gives the OCR contract free validation and OpenAPI docs</td></tr>
+<tr><td>Pydantic v2</td><td>The schema <em>is</em> the contract between OCR and geometry</td></tr>
+<tr><td>Uvicorn</td><td>ASGI server</td></tr>
+
+<tr><td class="b" rowspan="4">Frontend<br/><span class="pill p-green">built</span></td><td>Next.js 14 (App Router)</td><td>Existing project framework</td></tr>
+<tr><td>React 18 + TypeScript strict</td><td>Existing; types mirror the API response exactly</td></tr>
+<tr><td>Leaflet 1.9 + react-leaflet 4.2</td><td>Lightweight, no API key, OSM and Esri satellite basemaps. Loaded via <code>dynamic(ssr:false)</code> — Leaflet touches <code>window</code> at import</td></tr>
+<tr><td>Tailwind</td><td>Existing design system</td></tr>
+
+<tr><td class="b" rowspan="3">Persistence<br/><span class="pill p-amber">next</span></td><td>PostgreSQL + PostGIS</td><td>Supabase supports it. Needs <code>CREATE EXTENSION postgis</code> and a <code>geometry(Polygon,4326)</code> column</td></tr>
+<tr><td>Object store</td><td>Scanned pages with WORM / object lock for tamper evidence</td></tr>
+<tr><td>Async queue + workers</td><td>A 300-page bound volume cannot OCR inside a request</td></tr>
+</table>
+
+<h3>8.1 Migration to PostGIS</h3>
+<p class="small">The engine was written as a thin wrapper over the same predicates PostGIS exposes, so the port is mechanical rather than a rewrite:</p>
+<pre style="page-break-inside:avoid"><span class="c">-- area reconciliation                    -- overlapping ownership</span>
+SELECT survey_no,                          SELECT a.survey_no, b.survey_no,
+       ST_Area(geom::geography)/10000             ST_Area(ST_Intersection(a.geom,b.geom)
+         AS mapped_ha                                      ::geography)/10000 AS overlap_ha
+FROM   parcels                             FROM   parcels a JOIN parcels b
+WHERE  ABS(ST_Area(geom::geography)/10000         ON ST_Overlaps(a.geom, b.geom)
+       - recorded_area_ha)                       AND a.id &lt; b.id;
+       / recorded_area_ha &gt; 0.05;
+
+<span class="c">-- parcel plotting outside its own village</span>
+SELECT p.survey_no FROM parcels p JOIN villages v USING (lgd_village_code)
+WHERE  NOT ST_Within(p.geom, v.geom);</pre>
+</section>
+
+
+<!-- ============================== 9. GAP ============================== -->
+<section>
+<div class="eyebrow">Section 9</div>
+<h2>Ideal &middot; current &middot; implemented</h2>
+
+<table>
+<tr><th style="width:38mm">Capability</th><th style="width:56mm">How it should ideally work</th><th style="width:56mm">How it works now</th><th>Status</th></tr>
+
+<tr><td class="b">Getting measurements off the page</td><td>Sarvam OCR reads the 7/12 and the tippan; a layout model parses the ladder diagram into chainage/offset rows; every field carries confidence</td><td>Documents are supplied as JSON — by hand, by fixture, or by upload</td><td><span class="pill p-rose">not built</span></td></tr>
+
+<tr><td class="b">Bearings &amp; distances</td><td>Any notation, magnetic or true, any unit</td><td>Whole-circle and quadrantal both parse and round-trip; 17 linear units; declination applied when supplied</td><td><span class="pill p-green">done</span></td></tr>
+
+<tr><td class="b">Area units</td><td>Every regional unit resolved against the district's own revenue manual</td><td>19 standard units exact; bigha/katha keyed by state with confidence labels, and <strong>refused</strong> rather than guessed when the state is unknown</td><td><span class="pill p-blue">partial</span></td></tr>
+
+<tr><td class="b">Coordinate systems</td><td>Every CRS any Indian sheet was ever drawn on</td><td>14 India zones, 6 UTM zones, India NSF LCC; per-parcel zone selection; legacy zone inference; ambiguity refused</td><td><span class="pill p-green">done</span></td></tr>
+
+<tr><td class="b">Shape from measurements</td><td>Traverse, chain-and-offset, and coordinates, all with self-checks</td><td>All three, with Bowditch/transit adjustment and closure grading</td><td><span class="pill p-green">done</span></td></tr>
+
+<tr><td class="b">Position on Earth</td><td>Every parcel anchored to survey control</td><td>Coordinates, or Helmert fit to control points, or adjacency inference from one anchor</td><td><span class="pill p-green">done</span></td></tr>
+
+<tr><td class="b">Village assembly</td><td>Least-squares network adjustment over the whole village simultaneously</td><td>Greedy growth from anchors plus iterative refinement; centimetre-exact on regular tiling, metre-scale on irregular</td><td><span class="pill p-blue">partial</span></td></tr>
+
+<tr><td class="b">Uncertainty</td><td>Rigorous covariance propagation</td><td>Empirical slack probe, propagated along the inference chain, conservatively calibrated</td><td><span class="pill p-blue">partial</span></td></tr>
+
+<tr><td class="b">Cadastral map sheets</td><td>Scanned village maps georeferenced with GCPs and raster-to-vector traced</td><td>Not addressed — the engine works from measurements, not from map images</td><td><span class="pill p-rose">not built</span></td></tr>
+
+<tr><td class="b">ULPIN</td><td>Emit and consume the official 14-digit Bhu-Aadhaar</td><td>Not implemented in this layer. A demo derivation existed in the earlier build and was removed rather than left to be mistaken for the real thing</td><td><span class="pill p-rose">not built</span></td></tr>
+
+<tr><td class="b">Persistence</td><td>PostGIS with topology validation and version history</td><td>Stateless — every request recomputes from the documents supplied</td><td><span class="pill p-rose">not built</span></td></tr>
+
+<tr><td class="b">Officer workflow</td><td>Review queue, correction, digital signature, audit trail</td><td>Read-only map with provenance and findings</td><td><span class="pill p-blue">partial</span></td></tr>
+</table>
+
+<div class="box ok">
+<h4>What this means for the demo</h4>
+<p style="margin:0">
+The claim that can be made honestly is: <em>"Give us the measurements off any Indian land
+document and we will produce a validated, provenance-tracked polygon in WGS84, anywhere in
+the country, with an error bar. One anchored parcel maps an entire village."</em> The claim
+that cannot yet be made is that OCR produces those measurements automatically, or that
+scanned cadastral map sheets are vectorised.
+</p>
+</div>
+</section>
+
+
+<!-- ============================== 10. NEXT ============================== -->
+<section>
+<div class="eyebrow">Section 10</div>
+<h2>What to build next, in order</h2>
+
+<table>
+<tr><th style="width:10mm">#</th><th style="width:52mm">Work</th><th>Why it is next</th><th style="width:20mm">Effort</th></tr>
+<tr><td class="b">1</td><td>Tippan / FMB extraction to the JSON contract</td><td>The single blocker. Everything downstream is built and tested; without this the corpus cannot enter the system. Start with printed FMB tables before hand-drawn ladders</td><td>High</td></tr>
+<tr><td class="b">2</td><td>Officer anchoring UI — click two corners on satellite imagery</td><td>Converts a floating village into a mapped one in about thirty seconds, and needs no new backend. Highest value per hour of work in the whole list</td><td>Low</td></tr>
+<tr><td class="b">3</td><td>PostGIS persistence</td><td>Makes results durable and moves the validation rules into SQL where they scale across districts</td><td>Medium</td></tr>
+<tr><td class="b">4</td><td>Least-squares network adjustment</td><td>Replaces greedy growth with a simultaneous solve; would close most of the gap between the 0.025 m and 16 m results</td><td>Medium</td></tr>
+<tr><td class="b">5</td><td>Cadastral map sheet georeferencing</td><td>The other half of the problem statement, and the part DILRMP is genuinely stuck on. Deliberately separate from this engine</td><td>High</td></tr>
+<tr><td class="b">6</td><td>ULPIN emit and consume</td><td>Do it properly against the state's issuing service, or not at all</td><td>Low</td></tr>
+</table>
+
+<h3>Two things to keep saying out loud</h3>
+<div class="cols2">
+<div class="box">
+<h4>Geometry is a second validator</h4>
+<p class="small" style="margin:0">
+It is not a map viewer. A traverse that fails to close catches a dropped digit that no OCR
+confidence score can see, because the error is only visible when the measurements are
+required to be self-consistent. The register's declared area and the reconstructed area are
+two independent statements about one parcel; when they disagree, something on the page is
+wrong.
+</p>
+</div>
+<div class="box">
+<h4>Nothing here changes a legal record</h4>
+<p class="small" style="margin:0">
+Indian land title is <strong>presumptive</strong>, not conclusive. An inferred position is a
+hypothesis for an officer to verify, never a statement about who owns what. That is
+precisely why the accuracy class, the provenance and the uncertainty travel with every
+parcel through the API and onto the map — so the two can never be confused.
+</p>
+</div>
+</div>
+
+<div style="margin-top:16pt;padding-top:9pt;border-top:2px solid var(--ink)">
+<p class="tiny" style="margin:0">
+Engine: 2,983 lines across five modules, plus a 449-line API and a ground-truth test suite.
+Dependencies: shapely and pyproj. All figures in this report are measured outputs from the
+committed code, reproducible with <code>python tests/test_assembly_truth.py</code>.
+Repository: <code>D:\land\brain-land</code>.
+</p>
+</div>
+</section>
+
+</body>
+</html>
