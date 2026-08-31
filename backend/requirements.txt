@@ -20,9 +20,16 @@ aiofiles>=23.2.1
 
 # Image Processing & Document Handling
 Pillow>=10.2.0
-opencv-python-headless>=4.9.0.80
 pypdf>=4.1.0
-pdf2image>=1.17.0
+
+# opencv-python-headless and pdf2image are imported nowhere in app/. Together
+# they add ~150 MB to the image and several minutes to every build, which the
+# 512 MB free-tier instance cannot spare. pdf2image would also need the poppler
+# binaries, which are not in Render's Python image and cannot be apt-installed
+# without a Dockerfile. Page rasterisation is not needed either way: Sarvam
+# Doc AI takes the PDF bytes directly. Uncomment if something starts using them.
+# opencv-python-headless>=4.9.0.80
+# pdf2image>=1.17.0
 
 # Geospatial / Cadastral validation
 # shapely  -> geometry predicates (overlap, contains, union, difference, distance)

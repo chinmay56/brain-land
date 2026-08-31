@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { Sidebar } from '@/components/common/Sidebar';
+import { BackendWarmup } from '@/components/common/BackendWarmup';
 import { useAuth } from '@/context/AuthContext';
 import { ShieldAlert, ArrowRight, Lock } from 'lucide-react';
 
@@ -19,6 +20,8 @@ export default function OfficerLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FBFBFA]">
+      {/* Wakes an idled free-tier API before the first GIS call. Renders nothing. */}
+      <BackendWarmup />
       <GovernmentHeader />
       <div className="flex-1 flex w-full">
         <Sidebar />

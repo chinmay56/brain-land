@@ -25,6 +25,10 @@ import {
 import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import { LandRecord, FieldConfidence } from '@/types';
 
+// Base URL of the FastAPI backend. Set NEXT_PUBLIC_API_URL in Vercel to the
+// deployed Render URL; the localhost fallback keeps `npm run dev` working.
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
 export default function CitizenUploadPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -116,7 +120,7 @@ export default function CitizenUploadPage() {
 
       setProcessingStatus('Passing Universal 12-Field Schema with strict disambiguation rules...');
       
-      const res = await fetch('http://localhost:8000/api/extraction/process', {
+      const res = await fetch(`${API}/api/extraction/process`, {
         method: 'POST',
         body: formData,
       });
@@ -172,7 +176,7 @@ export default function CitizenUploadPage() {
         const formData = new FormData();
         formData.append('file', supportingFile);
 
-        const res = await fetch('http://localhost:8000/api/extraction/process', {
+        const res = await fetch(`${API}/api/extraction/process`, {
           method: 'POST',
           body: formData,
         });
@@ -260,7 +264,7 @@ export default function CitizenUploadPage() {
 
     // Save to FastAPI backend if available
     try {
-      await fetch('http://localhost:8000/api/land-records', {
+      await fetch(`${API}/api/land-records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecord),

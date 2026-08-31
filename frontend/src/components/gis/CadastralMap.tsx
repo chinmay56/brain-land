@@ -1,30 +1,40 @@
 'use client';
 
 /**
- * Map of parcels derived from land documents.
+ * Map of parcels derived from land documents, with an officer trace mode.
  *
- * Nothing drawn here came from a cadastral shapefile. Every polygon was computed
- * from measurements on a document, so the map colours by how the geometry was
- * obtained rather than by record status — a parcel positioned by solving the
- * adjacency network must never look the same as one measured with GPS.
+ * Nothing drawn here comes from a cadastral shapefile. Every polygon was
+ * computed from measurements on a document, so the map colours by how the
+ * geometry was obtained rather than by record status — a parcel positioned by
+ * solving the adjacency network must never look like one measured with GPS.
  *
- * Load with next/dynamic and { ssr: false }: Leaflet touches `window` at import.
+ * Trace mode is how a 7/12 or a sale deed gets a position: the officer clicks
+ * the parcel corners on imagery, those become a coordinates source, and the
+ * area declared on the document then cross-checks the trace.
+ *
+ * Load with next/dynamic and { ssr: false } — Leaflet touches `window` at import.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, GeoJSON, Circle, LayersControl, useMap } from 'react-leaflet';
+import {
+  MapContainer, TileLayer, GeoJSON, Circle, Polygon, CircleMarker,
+  LayersControl, useMap, useMapEvents,
+} from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import type { AccuracyClass, ParcelCollection, ParcelFeature } from '@/types/gis';
 
 export const ACCURACY_STYLE: Record<AccuracyClass, { color: string; fill: string; label: string }> = {
-  surveyed:                { color: '#047857', fill: '#10b981', label: 'Surveyed (coordinates in the document)' },
-  reconstructed_anchored:  { color: '#1d4ed8', fill: '#3b82f6', label: 'Reconstructed and anchored' },
-  reconstructed_floating:  { color: '#7c3aed', fill: '#a78bfa', label: 'Reconstructed, not yet placed' },
-  inferred:                { color: '#b45309', fill: '#f59e0b', label: 'Inferred from adjoining parcels' },
-  none:                    { color: '#6b7280', fill: '#9ca3af', label: 'No geometry' },
+  surveyed:               { color: '#047857', fill: '#10b981', label: 'Surveyed (coordinates in the document)' },
+  reconstructed_anchored: { color: '#1d4ed8', fill: '#3b82f6', label: 'Reconstructed and anchored' },
+  reconstructed_floating: { color: '#7c3aed', fill: '#a78bfa', label: 'Reconstructed, not yet placed' },
+  inferred:               { color: '#b45309', fill: '#f59e0b', label: 'Inferred from adjoining parcels' },
+  none:                   { color: '#6b7280', fill: '#9ca3af', label: 'No geometry' },
 };
+
+/** [lon, lat] — GeoJSON order, which is what the API expects. */
+export type LonLat = [number, number];
 
 interface Props {
   parcels: ParcelCollection | null;
@@ -32,14 +42,16 @@ interface Props {
   onSelect: (surveyNo: string) => void;
   showUncertainty: boolean;
   accuracyFilter: 'ALL' | AccuracyClass;
+  traceMode?: boolean;
+  tracePoints?: LonLat[];
+  onTraceAdd?: (point: LonLat) => void;
 }
 
 function FitToParcels({ parcels }: { parcels: ParcelCollection | null }) {
   const map = useMap();
-  const signature = useRef<string>('');
-
+  const signature = useRef('');
   useEffect(() => {
-    if (!parcels || parcels.features.length === 0) return;
+    if (!parcels?.features.length) return;
     const sig = parcels.features.map((f) => f.properties.survey_no).join('|');
     if (sig === signature.current) return;
     const bounds = L.geoJSON(parcels as never).getBounds();
@@ -48,7 +60,6 @@ function FitToParcels({ parcels }: { parcels: ParcelCollection | null }) {
       signature.current = sig;
     }
   }, [parcels, map]);
-
   return null;
 }
 
@@ -66,15 +77,38 @@ function PanToSelected({
   return null;
 }
 
-/** Centroid of a GeoJSON ring, good enough for placing an uncertainty circle. */
+/** Collects officer clicks while trace mode is on. */
+function TraceCollector({
+  active, onAdd,
+}: { active: boolean; onAdd?: (p: LonLat) => void }) {
+  const map = useMap();
+
+  useMapEvents({
+    click(e) {
+      if (!active || !onAdd) return;
+      onAdd([+e.latlng.lng.toFixed(8), +e.latlng.lat.toFixed(8)]);
+    },
+  });
+
+  useEffect(() => {
+    const container = map.getContainer();
+    container.style.cursor = active ? 'crosshair' : '';
+    return () => { container.style.cursor = ''; };
+  }, [active, map]);
+
+  return null;
+}
+
 function ringCentroid(coords: number[][]): [number, number] {
-  let x = 0, y = 0, n = 0;
-  for (const [lon, lat] of coords) { x += lon; y += lat; n += 1; }
-  return n ? [y / n, x / n] : [0, 0];
+  let x = 0, y = 0;
+  for (const [lon, lat] of coords) { x += lon; y += lat; }
+  const n = coords.length || 1;
+  return [y / n, x / n];
 }
 
 export default function CadastralMap({
   parcels, selectedSurveyNo, onSelect, showUncertainty, accuracyFilter,
+  traceMode = false, tracePoints = [], onTraceAdd,
 }: Props) {
   const visible = useMemo<ParcelCollection | null>(() => {
     if (!parcels) return null;
@@ -95,7 +129,6 @@ export default function CadastralMap({
       weight: selected ? 3.5 : areaBad ? 2.6 : 1.7,
       fillColor: palette.fill,
       fillOpacity: selected ? 0.55 : 0.32,
-      // A dashed outline means the position is inferred, not measured.
       dashArray: cls === 'inferred' ? '7 4' : undefined,
     };
   };
@@ -103,8 +136,7 @@ export default function CadastralMap({
   const onEach = (feature: ParcelFeature, layer: L.Layer) => {
     const p = feature.properties;
     const unc = p.position_uncertainty_m
-      ? ` &middot; ±${p.position_uncertainty_m.toFixed(1)} m`
-      : '';
+      ? ` &middot; ±${p.position_uncertainty_m.toFixed(1)} m` : '';
     layer.bindTooltip(
       `<div style="font-family:ui-sans-serif,system-ui;line-height:1.45">
          <strong style="font-size:13px">Survey No. ${p.survey_no}</strong><br/>
@@ -115,7 +147,7 @@ export default function CadastralMap({
       { sticky: true, direction: 'top', opacity: 0.97 },
     );
     layer.on({
-      click: () => onSelect(p.survey_no),
+      click: () => { if (!traceMode) onSelect(p.survey_no); },
       mouseover: (e) => (e.target as L.Path).setStyle({ fillOpacity: 0.58 }),
       mouseout: (e) => (e.target as L.Path).setStyle({
         fillOpacity: p.survey_no === selectedSurveyNo ? 0.55 : 0.32,
@@ -134,35 +166,39 @@ export default function CadastralMap({
       }));
   }, [visible, showUncertainty]);
 
+  // Leaflet wants [lat, lng]; our trace points are [lon, lat].
+  const traceLatLngs = tracePoints.map(([lon, lat]) => [lat, lon] as [number, number]);
+
   return (
     <MapContainer
-      center={[22.0, 79.0]}
-      zoom={5}
+      center={[20.9820, 75.5760]}
+      zoom={6}
       scrollWheelZoom
       style={{ height: '100%', width: '100%', background: '#FAF9F6' }}
     >
       <LayersControl position="topright">
-        <LayersControl.BaseLayer checked name="Street">
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19}
-          />
-        </LayersControl.BaseLayer>
-        <LayersControl.BaseLayer name="Satellite">
+        {/* Satellite first and checked: an officer tracing a parcel needs to see
+            the ground, not a street map. */}
+        <LayersControl.BaseLayer checked name="Satellite">
           <TileLayer
             attribution="Imagery &copy; Esri"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             maxZoom={19}
           />
         </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Street">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
+          />
+        </LayersControl.BaseLayer>
       </LayersControl>
 
-      {/* The error bar, drawn to scale: how far an inferred parcel might really be. */}
       {uncertaintyCircles.map((c) => (
         <Circle
           key={`unc-${c.key}`}
-          center={c.centre as [number, number]}
+          center={c.centre}
           radius={c.radius}
           pathOptions={{ color: '#b45309', weight: 1, dashArray: '3 4',
                          fillColor: '#f59e0b', fillOpacity: 0.07 }}
@@ -178,6 +214,23 @@ export default function CadastralMap({
         />
       )}
 
+      {/* The trace in progress */}
+      {traceLatLngs.length >= 3 && (
+        <Polygon
+          positions={traceLatLngs}
+          pathOptions={{ color: '#facc15', weight: 3, fillColor: '#fde047', fillOpacity: 0.28 }}
+        />
+      )}
+      {traceLatLngs.map((pos, i) => (
+        <CircleMarker
+          key={`t-${i}`}
+          center={pos}
+          radius={5}
+          pathOptions={{ color: '#141416', weight: 2, fillColor: '#facc15', fillOpacity: 1 }}
+        />
+      ))}
+
+      <TraceCollector active={traceMode} onAdd={onTraceAdd} />
       <FitToParcels parcels={visible} />
       <PanToSelected parcels={parcels} selectedSurveyNo={selectedSurveyNo} />
     </MapContainer>

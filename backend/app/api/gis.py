@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.services import crs_india as crs
@@ -447,3 +447,127 @@ async def sample(village: Literal["grid", "irregular"] = "grid") -> Dict[str, An
     """
     from app.services.sample_documents import sample_documents
     return {"documents": sample_documents(village)}
+
+
+# ===========================================================================
+# The live path: a scanned document in, a plotted parcel out
+# ===========================================================================
+@router.post("/plot-document", summary="Upload a scanned land record — OCR it and plot it")
+async def plot_document(
+    file: UploadFile = File(..., description="Scanned land record: PDF, PNG or JPEG."),
+    state: Optional[str] = Query(
+        None, description="Fallback state if the document does not name one. "
+                          "Needed to convert regional units such as bigha."),
+    trace: Optional[str] = Form(
+        None, description='Officer-traced corners as JSON: [[lon,lat],[lon,lat],…]. '
+                          'Supply on the second call, after the officer has drawn '
+                          'the parcel on imagery.'),
+    area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+) -> Dict[str, Any]:
+    """
+    The end-to-end path. Runs the real extraction stage on an uploaded scan,
+    adapts its output to the geometry contract, and plots whatever the document
+    supports.
+
+    A 7/12, jamabandi or sale deed carries no geometry, so the first call comes
+    back with the fields extracted and `needs_position` set — that is correct,
+    not a failure. Call again with `trace` once the officer has marked the parcel
+    corners on imagery, and the parcel plots with its declared area cross-checking
+    the trace.
+
+    The response always reports `data_source`, so a demo can never silently show
+    fixture data as though it were a live extraction.
+    """
+    from app.services.record_to_document import record_to_document
+    from app.services.sarvam_vision import sarvam_service
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Uploaded file is empty.")
+
+    try:
+        extracted = await sarvam_service.extract_land_record(raw, file.filename or "record.pdf")
+    except Exception as exc:                                  # pragma: no cover
+        raise HTTPException(502, f"Extraction stage failed: {type(exc).__name__}: {exc}")
+
+    data_source = extracted.get("data_source", "UNKNOWN")
+
+    document, notes = record_to_document(
+        extracted,
+        fallback_state=state,
+        document_id=file.filename or "",
+        document_type=str(extracted.get("document_type") or ""),
+    )
+
+    # An officer-drawn polygon becomes an ordinary coordinates source.
+    traced_points: Optional[List[List[float]]] = None
+    if trace:
+        try:
+            traced_points = json.loads(trace)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"`trace` is not valid JSON: {exc}")
+        if not isinstance(traced_points, list) or len(traced_points) < 3:
+            raise HTTPException(400, "A traced parcel needs at least 3 corners.")
+        document["coordinates"] = {"points": traced_points, "crs": "WGS84", "order": "xy"}
+
+    try:
+        doc_in = DocumentIn(**document)
+    except Exception as exc:
+        raise HTTPException(
+            422,
+            f"Extracted fields did not satisfy the geometry contract: {exc}. "
+            f"See GET /api/gis/requirements.",
+        )
+
+    try:
+        result = _run([doc_in], assemble=False, tolerance=area_tolerance_pct)
+    except (sm.UnitError, crs.CRSError) as exc:
+        raise HTTPException(422, str(exc))
+
+    result["source_file"] = file.filename
+    result["data_source"] = data_source
+    result["data_source_note"] = (
+        "Live extraction from the document." if data_source == "SARVAM_LIVE"
+        else "NOT a live extraction — the extraction stage returned built-in "
+             "fixture data because no working API key was configured. Nothing on "
+             "screen came from the uploaded file."
+    )
+    result["extraction"] = {
+        "fields": {
+            key: {"value": _plain(value), "confidence": _conf(value)}
+            for key, value in extracted.items()
+            if key not in ("overall_confidence", "document_pages", "data_source",
+                           "co_owners", "boundaries")
+        },
+        "co_owners": extracted.get("co_owners") or [],
+        "boundaries": document.get("boundaries", {}),
+        "overall_confidence": extracted.get("overall_confidence"),
+        "pages": extracted.get("document_pages"),
+    }
+    result["adapter_notes"] = notes
+    result["needs_position"] = result["summary"]["plotted"] == 0
+    result["next_step"] = (
+        None if result["summary"]["plotted"]
+        else "This document type carries no geometry. Ask the officer to trace the "
+             "parcel corners on imagery, then POST again with `trace`."
+    )
+    return result
+
+
+def _plain(field: Any) -> Optional[str]:
+    """Unwrap a FieldConfidence (object or dict) to its plain value."""
+    if field is None or isinstance(field, (str, int, float)):
+        return str(field) if field is not None else None
+    value = getattr(field, "value", None)
+    if value is None and isinstance(field, dict):
+        value = field.get("value")
+    return str(value) if value is not None else None
+
+
+def _conf(field: Any) -> Optional[float]:
+    if field is None or isinstance(field, (str, int, float)):
+        return None
+    conf = getattr(field, "confidence", None)
+    if conf is None and isinstance(field, dict):
+        conf = field.get("confidence")
+    return float(conf) if conf is not None else None

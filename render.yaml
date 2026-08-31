@@ -1,0 +1,50 @@
+# Render blueprint for the FastAPI backend.
+#
+# The frontend is NOT deployed here — Next.js goes to Vercel. Only the API,
+# which needs a real Linux container because shapely and pyproj are compiled
+# extensions and the Sarvam polling loop can run for 30 seconds. Neither fits
+# a serverless function.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> point at this repo.
+# Secrets are marked `sync: false`, which means Render prompts for them in the
+# dashboard and never reads them from the repository.
+
+services:
+  - type: web
+    name: brain-land-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: singapore          # closest Render region to India
+    healthCheckPath: /health
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    # $PORT is assigned by Render; binding 0.0.0.0 is required or the service
+    # is unreachable from outside the container.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: ENVIRONMENT
+        value: production
+
+      # Exact frontend origin(s), comma separated, no trailing slash, e.g.
+      #   https://brain-land.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # Vercel mints a new hostname for every preview deployment, so those
+      # cannot be listed one by one. Anchored pattern, project prefix kept:
+      #   ^https://brain-land[a-z0-9-]*\.vercel\.app$
+      # Leave blank if you only ever demo from the production URL.
+      - key: ALLOWED_ORIGIN_REGEX
+        sync: false
+
+      # Set these in the Render dashboard. Never commit them.
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false

@@ -68,6 +68,16 @@ SIH_LAND_RECORD_EXTRACTION_SCHEMA = {
             "type": "string",
             "description": "Mutation / Ferfar entry number (फेरफार क्रमांक) mentioned in pencil, brackets, or mutation column (e.g. 5821, 9420). Return null if absent."
         },
+        "boundaries": {
+            "type": "object",
+            "description": "The four boundaries of the parcel (चतु:सीमा / चतुःसीमा / hadd / vaas hadd) exactly as written on the record. These name what adjoins the parcel on each side and are what allow it to be positioned relative to its neighbours on a map.",
+            "properties": {
+                "north": {"type": "string", "description": "What adjoins to the north (उत्तर): an adjoining survey/gut/plot number, or a road, nala, canal, or village name. Return null if absent."},
+                "south": {"type": "string", "description": "What adjoins to the south (दक्षिण). Return null if absent."},
+                "east":  {"type": "string", "description": "What adjoins to the east (पूर्व). Return null if absent."},
+                "west":  {"type": "string", "description": "What adjoins to the west (पश्चिम). Return null if absent."}
+            }
+        },
         "registration_info": {
             "type": "string",
             "description": "Deed registration details for Sale Deeds only: Deed Registration No, SRO Office, Volume/Book, Stamp Duty, and Execution Year. Return null on 7/12 extracts."
@@ -100,7 +110,9 @@ class SarvamDocAIExtractor:
         the 12 structured SIH fields with real AI confidence scores.
         """
         if not self.api_key or self.api_key.startswith("mock-") or self.api_key == "":
-            logger.info("Using calibrated DoLR fallback schema response (No active live Sarvam key).")
+            logger.error("!!! NO SARVAM API KEY — returning BUILT-IN FIXTURE DATA. "
+                         "Nothing below came from the uploaded document. "
+                         "Create backend/.env with a real SARVAM_API_KEY.")
             return self._get_calibrated_baseline(file_name)
 
         # Official Sarvam Header (ONLY api-subscription-key)
@@ -206,7 +218,17 @@ class SarvamDocAIExtractor:
         confs = [f.confidence for f in [owner_name, survey_number, area, village, tehsil, district] if f.confidence > 0]
         avg_conf = round(sum(confs) / len(confs), 2) if confs else 0.94
 
+        raw_boundaries = raw_result.get("boundaries") or {}
+        boundaries = {
+            d: str(raw_boundaries.get(d)).strip()
+            for d in ("north", "south", "east", "west")
+            if raw_boundaries.get(d) and str(raw_boundaries.get(d)).strip().lower()
+            not in ("", "null", "none")
+        }
+
         return {
+            "data_source": "SARVAM_LIVE",
+            "boundaries": boundaries,
             "owner_name": owner_name,
             "co_owners": co_owners,
             "survey_number": survey_number,
@@ -234,6 +256,7 @@ class SarvamDocAIExtractor:
         
         if is_sale_deed:
             return {
+                "data_source": "DEMO_FALLBACK",
                 "owner_name": FieldConfidence(value="Ramesh Baliram Patil", confidence=0.98, source_doc=file_name),
                 "co_owners": [],
                 "survey_number": FieldConfidence(value="124/2", confidence=0.99, source_doc=file_name),
@@ -254,6 +277,7 @@ class SarvamDocAIExtractor:
             }
 
         return {
+            "data_source": "DEMO_FALLBACK",
             "owner_name": FieldConfidence(value="Ramesh Baliram Patil", confidence=0.97, source_doc=file_name),
             "co_owners": ["Suresh Baliram Patil"],
             "survey_number": FieldConfidence(value="124/2", confidence=0.99, source_doc=file_name),

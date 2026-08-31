@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     HOST: str = "0.0.0.0"
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    # Anchored regex for hostnames that change on every deploy (Vercel previews).
+    # Empty in development; set on the server, e.g.
+    #   ^https://brain-land[a-z0-9-]*\.vercel\.app$
+    ALLOWED_ORIGIN_REGEX: str = ""
     CORS_ORIGINS: str = '["http://localhost:3000"]'
     
     # Sarvam AI Document Intelligence & Vision
