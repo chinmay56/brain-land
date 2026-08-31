@@ -24,17 +24,12 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import type { AccuracyClass, ParcelCollection, ParcelFeature } from '@/types/gis';
+import { ACCURACY_STYLE } from './accuracy';
+import type { LonLat } from './accuracy';
 
-export const ACCURACY_STYLE: Record<AccuracyClass, { color: string; fill: string; label: string }> = {
-  surveyed:               { color: '#047857', fill: '#10b981', label: 'Surveyed (coordinates in the document)' },
-  reconstructed_anchored: { color: '#1d4ed8', fill: '#3b82f6', label: 'Reconstructed and anchored' },
-  reconstructed_floating: { color: '#7c3aed', fill: '#a78bfa', label: 'Reconstructed, not yet placed' },
-  inferred:               { color: '#b45309', fill: '#f59e0b', label: 'Inferred from adjoining parcels' },
-  none:                   { color: '#6b7280', fill: '#9ca3af', label: 'No geometry' },
-};
-
-/** [lon, lat] — GeoJSON order, which is what the API expects. */
-export type LonLat = [number, number];
+// ACCURACY_STYLE and LonLat live in ./accuracy so that pages can import them
+// without pulling Leaflet — and therefore `window` — into the server bundle.
+// See the note at the top of that file.
 
 interface Props {
   parcels: ParcelCollection | null;

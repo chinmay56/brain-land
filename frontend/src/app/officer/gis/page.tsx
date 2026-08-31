@@ -11,8 +11,10 @@ import {
 import type {
   AccuracyClass, ParcelFeature, PlotResponse, GeometryFlag,
 } from '@/types/gis';
-import { ACCURACY_STYLE } from '@/components/gis/CadastralMap';
-import type { LonLat } from '@/components/gis/CadastralMap';
+// From ./accuracy, NOT from CadastralMap: importing a value out of CadastralMap
+// pulls Leaflet into the server bundle and the prerender dies on `window`.
+import { ACCURACY_STYLE } from '@/components/gis/accuracy';
+import type { LonLat } from '@/components/gis/accuracy';
 
 const CadastralMap = dynamic(() => import('@/components/gis/CadastralMap'), {
   ssr: false,
