@@ -64,6 +64,8 @@ class LandRecordResponse(LandRecordBase):
     submission_date: str
     verified_date: Optional[str] = None
     assigned_officer: Optional[str] = None
+    assigned_district: Optional[str] = None
+    assigned_tehsil: Optional[str] = None
     officer_remarks: Optional[str] = None
     validation_flags: List[ValidationFlag] = []
     document_url: Optional[str] = None

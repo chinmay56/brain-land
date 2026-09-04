@@ -13,6 +13,8 @@ export default function OfficerLoginPage() {
 
   const [employeeId, setEmployeeId] = useState('');
   const [designation, setDesignation] = useState('Sub-Divisional Revenue Officer (SDO)');
+  const [district, setDistrict] = useState('Pune');
+  const [tehsil, setTehsil] = useState('Haveli');
   const [password, setPassword] = useState('');
   const [securityPin, setSecurityPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,14 @@ export default function OfficerLoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await loginOfficer(employeeId || 'REV-MH-PN-4091', password || 'admin@revenue2026', securityPin || '8912');
+      await loginOfficer(
+        employeeId || 'REV-MH-PN-4091', 
+        password || 'admin@revenue2026', 
+        securityPin || '8912',
+        district,
+        tehsil,
+        designation
+      );
       router.push('/officer/dashboard');
     } finally {
       setLoading(false);
@@ -34,12 +43,6 @@ export default function OfficerLoginPage() {
 
       <main className="flex-1 max-w-sm mx-auto px-4 py-12 w-full flex flex-col justify-center">
         <div className="bg-white border border-[#E8E6DF] rounded-2xl p-7 space-y-5 shadow-stone-sm">
-          {/* Security Banner */}
-          <div className="bg-[#141416] text-[#E8E6DF] text-[10.5px] font-semibold tracking-wide py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5">
-            <Lock className="w-3 h-3 text-terracotta-400" />
-            <span>Authorized Official Gateway • Section 43A IT Act</span>
-          </div>
-
           <div className="space-y-1">
             <div className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">
               Revenue Administration Portal
@@ -48,7 +51,7 @@ export default function OfficerLoginPage() {
               Officer Verification Console
             </h1>
             <p className="text-xs text-stone-500">
-              Sign in with your Departmental SSO or Employee Credentials
+              Sign in with your Departmental SSO &amp; Jurisdiction
             </p>
           </div>
 
@@ -74,13 +77,79 @@ export default function OfficerLoginPage() {
               <select
                 value={designation}
                 onChange={(e) => setDesignation(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900"
+                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
               >
                 <option value="Sub-Divisional Revenue Officer (SDO)">Sub-Divisional Revenue Officer (SDO)</option>
                 <option value="Tehsildar / Executive Magistrate">Tehsildar / Executive Magistrate</option>
                 <option value="Naib Tehsildar (Land Records)">Naib Tehsildar (Land Records)</option>
                 <option value="Revenue Inspector (Kanungo)">Revenue Inspector (Kanungo)</option>
               </select>
+            </div>
+
+            {/* Jurisdiction Selectors */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-stone-700">
+                  Assigned District
+                </label>
+                <select
+                  value={district}
+                  onChange={(e) => {
+                    setDistrict(e.target.value);
+                    if (e.target.value === 'Nashik') setTehsil('Nashik City');
+                    else if (e.target.value === 'Satara') setTehsil('Satara Sadar');
+                    else setTehsil('Haveli');
+                  }}
+                  className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
+                >
+                  <option value="Pune">Pune</option>
+                  <option value="Nashik">Nashik</option>
+                  <option value="Satara">Satara</option>
+                  <option value="Solapur">Solapur</option>
+                  <option value="Nagpur">Nagpur</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-stone-700">
+                  Assigned Tehsil
+                </label>
+                <select
+                  value={tehsil}
+                  onChange={(e) => setTehsil(e.target.value)}
+                  className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
+                >
+                  {district === 'Pune' && (
+                    <>
+                      <option value="Haveli">Haveli</option>
+                      <option value="Baramati">Baramati</option>
+                      <option value="Khed (Rajgurunagar)">Khed</option>
+                      <option value="Shirur">Shirur</option>
+                      <option value="Maval">Maval</option>
+                    </>
+                  )}
+                  {district === 'Nashik' && (
+                    <>
+                      <option value="Nashik City">Nashik City</option>
+                      <option value="Niphad">Niphad</option>
+                      <option value="Malegaon">Malegaon</option>
+                    </>
+                  )}
+                  {district === 'Satara' && (
+                    <>
+                      <option value="Satara Sadar">Satara Sadar</option>
+                      <option value="Karad">Karad</option>
+                      <option value="Wai">Wai</option>
+                    </>
+                  )}
+                  {['Solapur', 'Nagpur'].includes(district) && (
+                    <>
+                      <option value="Central Tehsil">Central Tehsil</option>
+                      <option value="Rural Sub-Division">Rural Sub-Division</option>
+                    </>
+                  )}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-1">
@@ -125,7 +194,7 @@ export default function OfficerLoginPage() {
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4 text-terracotta-400" />
-                  <span>Authenticate & Enter Queue</span>
+                  <span>Authenticate &amp; Enter Queue</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
@@ -133,8 +202,8 @@ export default function OfficerLoginPage() {
           </form>
 
           <div className="pt-3 border-t border-stone-100 text-center text-xs text-stone-500">
-            <Link href="/login" className="text-stone-700 hover:text-stone-950 hover:underline">
-              ← Citizen Land Owner Portal Login
+            <Link href="/" className="text-stone-700 hover:text-stone-950 hover:underline font-semibold">
+              ← Back to Home
             </Link>
           </div>
         </div>

@@ -249,7 +249,9 @@ export default function CitizenUploadPage() {
       overallConfidence: proposedData.overall_confidence || 0.94,
       status: 'UNDER_VERIFICATION',
       submissionDate: new Date().toISOString().split('T')[0],
-      assignedOfficer: 'SDO Pune Haveli',
+      assignedDistrict: proposedData.district?.value || 'Pune',
+      assignedTehsil: proposedData.tehsil?.value || 'Haveli',
+      assignedOfficer: `Shri Vikramaditya Joshi (SDO ${proposedData.tehsil?.value || 'Haveli'})`,
       validationFlags: proposedData.validation_flags || [],
       documentPages: 2,
       supportingDocuments: proposedData.supporting_documents

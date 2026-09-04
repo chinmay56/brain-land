@@ -134,9 +134,13 @@ export default function OfficerDashboardPage() {
   // Executive Dashboard Tab: 'queue' (Default) | 'geo' | 'analytics'
   const [activeTab, setActiveTab] = useState<'queue' | 'geo' | 'analytics'>('queue');
 
-  // Geographic Selectors
+  // Geographic Selectors - initialized to logged-in officer's assigned jurisdiction
+  const officerDistrict = user?.assignedDistrict || user?.district || 'Pune';
+  const officerTehsil = user?.assignedTehsil || user?.tehsil || 'Haveli';
+
   const [selectedState, setSelectedState] = useState<string>('Maharashtra');
-  const [selectedDistrict, setSelectedDistrict] = useState<string>('Pune');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>(officerDistrict);
+  const [selectedTehsilFilter, setSelectedTehsilFilter] = useState<string>(officerTehsil);
 
   const currentDistrictData = useMemo(() => {
     return DISTRICT_PROGRESS_DATA.find(
@@ -150,6 +154,17 @@ export default function OfficerDashboardPage() {
   }, [selectedState]);
 
   const filteredRecords = records.filter(rec => {
+    // Jurisdiction Filter: match District and optionally Tehsil
+    const recDistrict = rec.assignedDistrict || rec.district.value;
+    const recTehsil = rec.assignedTehsil || rec.tehsil.value;
+
+    if (selectedDistrict !== 'ALL' && recDistrict.toLowerCase() !== selectedDistrict.toLowerCase()) {
+      return false;
+    }
+    if (selectedTehsilFilter !== 'ALL' && recTehsil.toLowerCase() !== selectedTehsilFilter.toLowerCase()) {
+      return false;
+    }
+
     const matchesSearch = 
       rec.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rec.ownerName.value.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -172,7 +187,7 @@ export default function OfficerDashboardPage() {
         <div className="space-y-1">
           <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-terracotta-700" />
-            <span>Revenue Officer Console • राजस्व सत्यापन कक्ष</span>
+            <span>Revenue Officer Console • {officerDistrict} Division • {officerTehsil} Tehsil</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-stone-950 font-serif tracking-tight">
             {user?.name || 'Shri Vikramaditya Joshi'}
@@ -180,7 +195,7 @@ export default function OfficerDashboardPage() {
           <p className="text-xs text-stone-500 flex flex-wrap items-center gap-2">
             <span>{user?.designation || 'Sub-Divisional Revenue Officer (SDO)'}</span>
             <span>•</span>
-            <span>{user?.district || 'Pune Division'}</span>
+            <span className="font-semibold text-stone-800">{officerDistrict} District ({officerTehsil} Sub-Division)</span>
             <span>•</span>
             <span className="font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-800 border border-stone-200 font-semibold">
               {user?.employeeId || 'REV-MH-PN-4091'}
@@ -189,10 +204,10 @@ export default function OfficerDashboardPage() {
         </div>
 
         <Link
-          href="/officer/verification/LR-2026-1021"
+          href={`/officer/verification/${filteredRecords[0]?.id || 'LR-2026-1021'}`}
           className="inline-flex items-center gap-2 bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-stone-sm transition-all self-start sm:self-auto"
         >
-          <span>Open Next in SDO Queue</span>
+          <span>Open Next in {officerTehsil} Queue</span>
           <ArrowRight className="w-4 h-4 text-terracotta-400" />
         </Link>
       </div>

@@ -13,6 +13,9 @@ export interface UserProfile {
   tehsil?: string;
   village?: string;
   state?: string;
+  assignedDistrict?: string;
+  assignedTehsil?: string;
+  assignedVillages?: string[];
   avatarUrl?: string;
 }
 
@@ -70,6 +73,8 @@ export interface LandRecord {
   submissionDate: string;
   verifiedDate?: string;
   assignedOfficer?: string;
+  assignedDistrict?: string;
+  assignedTehsil?: string;
   officerRemarks?: string;
   validationFlags: ValidationFlag[];
   documentUrl?: string;

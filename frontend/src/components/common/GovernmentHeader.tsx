@@ -25,24 +25,24 @@ export const GovernmentHeader: React.FC = () => {
 
   return (
     <header className="w-full bg-[#FAF9F6] border-b border-[#E8E6DF] sticky top-0 z-50">
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-        {/* Brand & Emblem */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+        {/* Brand & Emblem with Government of India in Hindi */}
         <Link href="/" className="flex items-center gap-3 group">
           <div className="w-8 h-8 rounded-lg bg-[#141416] text-white flex items-center justify-center font-bold text-xs shadow-stone-sm border border-stone-800 group-hover:border-terracotta-600 transition-colors">
             <Building2 className="w-4 h-4 text-terracotta-400" />
           </div>
 
           <div>
-            <div className="text-[10px] font-semibold text-stone-500 uppercase tracking-widest leading-none">
-              Department of Land Resources • MoRD
+            <div className="text-[10.5px] font-bold text-stone-600 uppercase tracking-wider leading-none">
+              भारत सरकार • Government of India
             </div>
-            <div className="text-sm sm:text-base font-bold text-stone-950 leading-snug mt-0.5 tracking-tight group-hover:text-terracotta-700 transition-colors">
-              Land Record Digitization & Verification
+            <div className="text-xs sm:text-sm font-bold text-stone-950 leading-snug mt-0.5 tracking-tight group-hover:text-terracotta-700 transition-colors">
+              Department of Land Resources (DoLR) • भू-संसाधन विभाग
             </div>
           </div>
         </Link>
 
-        {/* Right Section: User Profile or Sign In Options */}
+        {/* Right Section: Land Owner Login & Officer Sign In Buttons */}
         <div className="flex items-center gap-3">
           {user && !isAuthPage ? (
             <div className="flex items-center gap-3">
@@ -81,27 +81,19 @@ export const GovernmentHeader: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <Link
                 href="/login"
-                className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                  pathname === '/login' 
-                    ? 'bg-stone-200 text-stone-900 font-bold' 
-                    : 'text-stone-700 hover:text-stone-950 hover:bg-stone-100'
-                }`}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#D7D4CA] text-stone-900 hover:bg-stone-100 transition-colors bg-white shadow-stone-sm"
               >
-                Citizen Sign In
+                Land Owner Login
               </Link>
               <Link
                 href="/officer-login"
-                className={`text-xs font-semibold px-3.5 py-1.5 rounded-lg shadow-stone-sm transition-colors flex items-center gap-1.5 ${
-                  pathname === '/officer-login' 
-                    ? 'bg-stone-800 text-white' 
-                    : 'bg-[#141416] hover:bg-stone-800 text-white'
-                }`}
+                className="text-xs font-semibold px-3.5 py-1.5 rounded-lg shadow-stone-sm transition-colors flex items-center gap-1.5 bg-[#141416] hover:bg-stone-800 text-white"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-terracotta-400" />
-                <span>Officer SSO</span>
+                <span>Officer Sign In</span>
               </Link>
             </div>
           )}

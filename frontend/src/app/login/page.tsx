@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
@@ -14,19 +14,27 @@ export default function CitizenLoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [passwordOrOtp, setPasswordOrOtp] = useState('');
   const [captchaInput, setCaptchaInput] = useState('');
-  const [captchaCode, setCaptchaCode] = useState('X7K9');
+  const [captchaCode, setCaptchaCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleRefreshCaptcha = () => {
+  const generateCaptcha = useCallback(() => {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let code = '';
     for (let i = 0; i < 4; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    setCaptchaCode(code);
+    return code;
+  }, []);
+
+  const handleRefreshCaptcha = () => {
+    setCaptchaCode(generateCaptcha());
   };
+
+  useEffect(() => {
+    setCaptchaCode(generateCaptcha());
+  }, [generateCaptcha]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +229,7 @@ export default function CitizenLoginPage() {
             </button>
           </form>
 
-          <div className="pt-3 border-t border-stone-100 text-center space-y-1.5 text-xs text-stone-500">
+          <div className="pt-3 border-t border-stone-100 text-center space-y-2 text-xs text-stone-500">
             <div>
               New Land Owner?{' '}
               <Link href="/register" className="text-stone-900 font-bold hover:underline">
@@ -229,8 +237,8 @@ export default function CitizenLoginPage() {
               </Link>
             </div>
             <div>
-              <Link href="/officer-login" className="text-terracotta-700 font-semibold hover:underline">
-                Revenue Officer Console Gateway →
+              <Link href="/" className="text-stone-700 font-semibold hover:underline">
+                ← Back to Home
               </Link>
             </div>
           </div>

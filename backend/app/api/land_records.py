@@ -70,16 +70,41 @@ MOCK_RECORDS = [
 @router.get("", response_model=List[LandRecordResponse])
 async def list_land_records(
     status: Optional[RecordStatus] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    district: Optional[str] = None,
+    tehsil: Optional[str] = None,
+    village: Optional[str] = None,
+    officer_id: Optional[str] = None
 ):
     results = MOCK_RECORDS
     if status:
         results = [r for r in results if r["status"] == status]
+    if district:
+        d = district.lower()
+        results = [
+            r for r in results 
+            if r.get("district", {}).get("value", "").lower() == d or (r.get("assigned_district") and r.get("assigned_district").lower() == d)
+        ]
+    if tehsil:
+        t = tehsil.lower()
+        results = [
+            r for r in results 
+            if r.get("tehsil", {}).get("value", "").lower() == t or (r.get("assigned_tehsil") and r.get("assigned_tehsil").lower() == t)
+        ]
+    if village:
+        v = village.lower()
+        results = [
+            r for r in results 
+            if r.get("village", {}).get("value", "").lower() == v
+        ]
     if search:
         s = search.lower()
         results = [
             r for r in results 
-            if s in r["id"].lower() or s in r["owner_name"]["value"].lower() or s in r["survey_number"]["value"].lower()
+            if s in r["id"].lower() 
+            or s in r.get("owner_name", {}).get("value", "").lower() 
+            or s in r.get("survey_number", {}).get("value", "").lower()
+            or s in r.get("village", {}).get("value", "").lower()
         ]
     return results
 
@@ -92,6 +117,21 @@ async def get_land_record(record_id: str):
 
 @router.post("", response_model=LandRecordResponse)
 async def create_land_record(record: LandRecordResponse):
-    MOCK_RECORDS.insert(0, record.dict())
-    return record
+    rec_dict = record.dict()
+    # Auto-assign jurisdiction from document if not assigned
+    doc_district = rec_dict.get("district", {}).get("value") or "Pune"
+    doc_tehsil = rec_dict.get("tehsil", {}).get("value") or "Haveli"
+    if not rec_dict.get("assigned_district"):
+        rec_dict["assigned_district"] = doc_district
+    if not rec_dict.get("assigned_tehsil"):
+        rec_dict["assigned_tehsil"] = doc_tehsil
+    if not rec_dict.get("assigned_officer"):
+        rec_dict["assigned_officer"] = f"Shri Vikramaditya Joshi (SDO {doc_tehsil})"
+    
+    # Avoid duplicate IDs
+    existing = [r for r in MOCK_RECORDS if r["id"] == rec_dict["id"]]
+    if existing:
+        MOCK_RECORDS.remove(existing[0])
+    MOCK_RECORDS.insert(0, rec_dict)
+    return rec_dict
 
