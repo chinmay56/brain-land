@@ -127,7 +127,22 @@ const DISTRICT_PROGRESS_DATA: DistrictProgress[] = [
 
 export default function OfficerDashboardPage() {
   const { user } = useAuth();
-  const [records] = useState<LandRecord[]>(MOCK_RECORDS);
+  const [records, setRecords] = useState<LandRecord[]>(MOCK_RECORDS);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedStr = localStorage.getItem('user_submitted_records');
+        if (savedStr) {
+          const saved: LandRecord[] = JSON.parse(savedStr);
+          const combined = [...saved, ...MOCK_RECORDS.filter(m => !saved.some(s => s.id === m.id))];
+          setRecords(combined);
+        }
+      } catch (e) {
+        console.error('LocalStorage load error:', e);
+      }
+    }
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [queueFilter, setQueueFilter] = useState<'ALL' | 'URGENT' | 'LOW_CONFIDENCE' | 'CONFLICTS' | 'VERIFIED'>('ALL');
 

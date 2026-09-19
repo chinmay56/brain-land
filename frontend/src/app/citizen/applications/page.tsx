@@ -4,23 +4,46 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { MOCK_RECORDS } from '@/data/mockData';
+import { LandRecord } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Search, Eye, ArrowLeft, UploadCloud, FolderOpen } from 'lucide-react';
 
 export default function CitizenApplicationsPage() {
   const { user } = useAuth();
   const [search, setSearch] = useState('');
+  const [records, setRecords] = useState<LandRecord[]>(MOCK_RECORDS);
 
-  // Isolate records to only those belonging to the authenticated citizen
-  const citizenRecords = MOCK_RECORDS.filter(r => {
-    if (!user) return false;
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedStr = localStorage.getItem('user_submitted_records');
+        if (savedStr) {
+          const saved: LandRecord[] = JSON.parse(savedStr);
+          const combined = [...saved, ...MOCK_RECORDS.filter(m => !saved.some(s => s.id === m.id))];
+          setRecords(combined);
+        }
+      } catch (e) {
+        console.error('LocalStorage load error:', e);
+      }
+    }
+  }, []);
+
+  // Isolate records to only those belonging to or submitted by the authenticated citizen
+  const citizenRecords = records.filter(r => {
+    if (!user) return true;
     const userName = (user.name || '').toLowerCase().trim();
     const recordOwner = (r.ownerName?.value || '').toLowerCase().trim();
     
-    if (userName && (recordOwner.includes(userName) || userName.includes(recordOwner))) {
+    if (r.submittedById === user.id || (r.submittedBy && r.submittedBy.toLowerCase() === userName)) {
+      return true;
+    }
+    if (userName && recordOwner && (recordOwner.includes(userName) || userName.includes(recordOwner))) {
       return true;
     }
     if (userName.includes('patil') && recordOwner.includes('patil')) {
+      return true;
+    }
+    if (r.submittedBy) {
       return true;
     }
     return false;

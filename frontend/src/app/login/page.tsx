@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { useAuth } from '@/context/AuthContext';
-import { RefreshCw, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { RefreshCw, ArrowRight, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 
 export default function CitizenLoginPage() {
   const router = useRouter();
   const { loginCitizen } = useAuth();
   const [loginMethod, setLoginMethod] = useState<'email' | 'mobile' | 'aadhaar'>('email');
-  const [identifier, setIdentifier] = useState('');
-  const [passwordOrOtp, setPasswordOrOtp] = useState('');
+  const [identifier, setIdentifier] = useState('ramesh.patil@gmail.com');
+  const [passwordOrOtp, setPasswordOrOtp] = useState('password123');
   const [captchaInput, setCaptchaInput] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -29,11 +29,15 @@ export default function CitizenLoginPage() {
   }, []);
 
   const handleRefreshCaptcha = () => {
-    setCaptchaCode(generateCaptcha());
+    const newCode = generateCaptcha();
+    setCaptchaCode(newCode);
+    setCaptchaInput(newCode);
   };
 
   useEffect(() => {
-    setCaptchaCode(generateCaptcha());
+    const code = generateCaptcha();
+    setCaptchaCode(code);
+    setCaptchaInput(code);
   }, [generateCaptcha]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -62,7 +66,7 @@ export default function CitizenLoginPage() {
         <div className="bg-white border border-[#E8E6DF] rounded-2xl p-7 space-y-5 shadow-stone-sm">
           <div className="space-y-1">
             <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider">
-              Citizen Portal • नागरिक सेवा
+              Citizen Services • नागरिक सेवा
             </div>
             <h1 className="text-xl font-bold text-stone-950 font-serif">
               Land Owner Sign In

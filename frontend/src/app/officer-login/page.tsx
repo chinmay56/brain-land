@@ -5,18 +5,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldCheck, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 
 export default function OfficerLoginPage() {
   const router = useRouter();
   const { loginOfficer } = useAuth();
 
-  const [employeeId, setEmployeeId] = useState('');
+  const [employeeId, setEmployeeId] = useState('REV-MH-PN-4091');
   const [designation, setDesignation] = useState('Sub-Divisional Revenue Officer (SDO)');
   const [district, setDistrict] = useState('Pune');
   const [tehsil, setTehsil] = useState('Haveli');
-  const [password, setPassword] = useState('');
-  const [securityPin, setSecurityPin] = useState('');
+  const [password, setPassword] = useState('admin@revenue2026');
+  const [securityPin, setSecurityPin] = useState('8912');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -45,10 +45,10 @@ export default function OfficerLoginPage() {
         <div className="bg-white border border-[#E8E6DF] rounded-2xl p-7 space-y-5 shadow-stone-sm">
           <div className="space-y-1">
             <div className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">
-              Revenue Administration Portal
+              Revenue Administration
             </div>
             <h1 className="text-xl font-bold text-stone-950 font-serif">
-              Officer Verification Console
+              Officer Verification
             </h1>
             <p className="text-xs text-stone-500">
               Sign in with your Departmental SSO &amp; Jurisdiction
@@ -194,7 +194,7 @@ export default function OfficerLoginPage() {
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4 text-terracotta-400" />
-                  <span>Authenticate &amp; Enter Queue</span>
+                  <span>Authenticate</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}

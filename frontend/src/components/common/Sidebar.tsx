@@ -26,15 +26,20 @@ interface NavItem {
 }
 
 export const Sidebar: React.FC = () => {
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const pathname = usePathname();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Distinct navigation trees based on active portal route
   const isOfficerSection = pathname.startsWith('/officer');
 
   const citizenNav: NavItem[] = [
     { name: 'My Dashboard', href: '/citizen/dashboard', icon: LayoutDashboard },
-    { name: 'Upload Land Record', href: '/citizen/upload', icon: UploadCloud, tag: 'New' },
+    { name: 'Upload Land Record', href: '/citizen/upload', icon: UploadCloud },
     { name: 'My Applications', href: '/citizen/applications', icon: FileSpreadsheet },
     { name: 'Verified Records (RoR)', href: '/citizen/records', icon: FileCheck2 },
     { name: 'Guidelines & Legal', href: '/citizen/help', icon: HelpCircle },
@@ -54,17 +59,6 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-[#FAF9F6] border-r border-[#E8E6DF] flex-shrink-0 h-[calc(100vh-61px)] sticky top-[61px] flex flex-col justify-between p-4 overflow-y-auto z-40">
       <div className="space-y-4">
-        {/* Portal Identifier Tag */}
-        <div className="px-3 py-2 bg-white border border-[#E8E6DF] rounded-xl flex items-center justify-between shadow-stone-sm">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isOfficerSection ? 'bg-[#141416]' : 'bg-terracotta-600'}`}></span>
-            <span className="text-xs font-bold text-stone-900 tracking-tight">
-              {isOfficerSection ? 'SDO Officer Console' : 'Citizen Land Portal'}
-            </span>
-          </div>
-          <span className="text-[10px] font-mono text-stone-400">DoLR</span>
-        </div>
-
         {/* Navigation list */}
         <nav className="space-y-1">
           {navItems.map((item) => {
@@ -103,11 +97,22 @@ export const Sidebar: React.FC = () => {
         </nav>
       </div>
 
-      {/* Subdued Footer */}
-      <div className="p-3 bg-white border border-[#E8E6DF] rounded-xl text-[10px] text-stone-500 space-y-0.5 shadow-stone-sm">
-        <div className="font-semibold text-stone-900">National Land Record System</div>
-        <div className="text-stone-400">Department of Land Resources</div>
-      </div>
+      {/* Logged in user profile block at bottom of sidebar */}
+      {mounted && user && (
+        <div className="p-3 bg-white border border-[#E8E6DF] rounded-xl shadow-stone-sm flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-[#141416] text-white flex items-center justify-center font-bold text-xs shadow-stone-sm shrink-0">
+            {(user.name || 'U').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-bold text-stone-900 truncate leading-tight">
+              {user.name}
+            </div>
+            <div className="text-[10.5px] text-stone-500 truncate leading-tight mt-0.5 font-medium">
+              {role === 'OFFICER' ? (user.designation || 'Revenue Officer') : 'Land Owner'}
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

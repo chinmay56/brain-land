@@ -48,7 +48,7 @@ export interface ValidationFlag {
   suggestedAction?: string;
 }
 
-// Complete 12 SIH Problem Statement Fields
+// Complete 12 Land Record Fields
 export interface LandRecord {
   id: string;
   applicationNo: string;
@@ -80,4 +80,6 @@ export interface LandRecord {
   documentUrl?: string;
   documentPages?: number;
   supportingDocuments?: string[];
+  submittedBy?: string;
+  submittedById?: string;
 }

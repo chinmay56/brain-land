@@ -22,35 +22,60 @@ import {
 
 export default function CitizenDashboardPage() {
   const { user } = useAuth();
-  const [records] = useState<LandRecord[]>(MOCK_RECORDS);
+  const [records, setRecords] = useState<LandRecord[]>(MOCK_RECORDS);
   const [selectedRecord, setSelectedRecord] = useState<LandRecord | null>(null);
 
-  // Strictly filter to only display records owned by the authenticated citizen
+  // Sync user-submitted records from localStorage on client mount
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedStr = localStorage.getItem('user_submitted_records');
+        if (savedStr) {
+          const saved: LandRecord[] = JSON.parse(savedStr);
+          // Combine saved records with MOCK_RECORDS, avoiding duplicates
+          const combined = [...saved, ...MOCK_RECORDS.filter(m => !saved.some(s => s.id === m.id))];
+          setRecords(combined);
+        }
+      } catch (e) {
+        console.error('LocalStorage load error:', e);
+      }
+    }
+  }, []);
+
+  // Filter to display records associated with or submitted by the authenticated citizen
   const citizenRecords = records.filter(r => {
-    if (!user) return false;
-    // Match by user's registered name or phone
+    if (!user) return true;
     const userName = (user.name || '').toLowerCase().trim();
     const recordOwner = (r.ownerName?.value || '').toLowerCase().trim();
     
-    if (userName && (recordOwner.includes(userName) || userName.includes(recordOwner))) {
+    // 1. Matched by active submission user ID or name
+    if (r.submittedById === user.id || (r.submittedBy && r.submittedBy.toLowerCase() === userName)) {
       return true;
     }
-    // Fallback for default test citizen "Ramesh Patil"
+    // 2. Matched by extracted land owner name
+    if (userName && recordOwner && (recordOwner.includes(userName) || userName.includes(recordOwner))) {
+      return true;
+    }
+    // 3. Fallback match for default demo user Ramesh Patil
     if (userName.includes('patil') && recordOwner.includes('patil')) {
+      return true;
+    }
+    // 4. Default: Show records submitted in this session (so newly submitted documents are NEVER hidden!)
+    if (r.submittedBy) {
       return true;
     }
     return false;
   });
 
   const totalSubmitted = citizenRecords.length;
-  const inVerification = citizenRecords.filter(r => r.status === 'PENDING_VERIFICATION' || r.status === 'IN_REVIEW').length;
+  const inVerification = citizenRecords.filter(r => r.status === 'PENDING_VERIFICATION' || r.status === 'IN_REVIEW' || r.status === 'UNDER_VERIFICATION').length;
   const verifiedCount = citizenRecords.filter(r => r.status === 'VERIFIED').length;
   const flaggedCount = citizenRecords.filter(r => r.status === 'FLAGGED' || (r.validationFlags && r.validationFlags.length > 0 && r.status !== 'VERIFIED')).length;
 
   return (
     <div className="space-y-6">
       {/* Top Welcome Header */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E8E6DF] shadow-stone-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white p-6 rounded-2xl border border-[#E8E6DF] shadow-stone-sm">
         <div className="space-y-1">
           <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider">
             Citizen Workspace • नागरिक पोर्टल
@@ -64,14 +89,6 @@ export default function CitizenDashboardPage() {
             <span>Aadhaar: <strong className="text-stone-700 font-mono font-semibold">•••• {user?.aadhaarLast4 || '8842'}</strong></span>
           </div>
         </div>
-
-        <Link
-          href="/citizen/upload"
-          className="inline-flex items-center gap-2 bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-stone-sm transition-all self-start sm:self-auto"
-        >
-          <UploadCloud className="w-4 h-4 text-terracotta-400" />
-          <span>Upload Land Record</span>
-        </Link>
       </div>
 
       {/* Metrics Row */}

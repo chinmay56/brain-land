@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { useAuth } from '@/context/AuthContext';
 import { 
@@ -23,7 +24,8 @@ import {
 import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 
 export default function LandingPage() {
-  const { switchRole } = useAuth();
+  const router = useRouter();
+  const { loginCitizen, loginOfficer, switchRole } = useAuth();
   const [selectedDocType, setSelectedDocType] = useState<'712' | 'khasra' | 'mutation'>('712');
 
   // Automatic Smooth Carousel Auto-play Interval (3.5s)
@@ -303,7 +305,7 @@ export default function LandingPage() {
 
               <div>
                 <h2 className="text-xl font-bold text-stone-950 tracking-tight">
-                  Land Owner Portal
+                  Land Owner
                 </h2>
                 <p className="text-xs text-stone-600 mt-1.5 leading-relaxed">
                   Submit your legacy 7/12 extract or mutation deed, review AI-extracted land holding data, propose field corrections, and track the verification lifecycle.
@@ -326,7 +328,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="pt-6">
+            <div className="pt-6 space-y-2.5">
               <div className="grid grid-cols-2 gap-2.5">
                 <Link
                   href="/login"
@@ -344,6 +346,16 @@ export default function LandingPage() {
                   Register
                 </Link>
               </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await loginCitizen('ramesh.patil@gmail.com', 'password123');
+                  router.push('/citizen/dashboard');
+                }}
+                className="w-full text-center block text-xs text-terracotta-700 font-semibold hover:underline cursor-pointer"
+              >
+                Explore Citizen Dashboard Demo →
+              </button>
             </div>
           </div>
 
@@ -358,7 +370,7 @@ export default function LandingPage() {
 
               <div>
                 <h2 className="text-xl font-bold text-stone-950 tracking-tight">
-                  Revenue Officer Console
+                  Revenue Officer
                 </h2>
                 <p className="text-xs text-stone-600 mt-1.5 leading-relaxed">
                   Dedicated side-by-side workstation for Sub-Divisional Officers (SDO) and Tehsildars to inspect source document evidence, verify low-confidence OCR fields, and certify records.
@@ -381,7 +393,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="pt-6">
+            <div className="pt-6 space-y-2.5">
               <Link
                 href="/officer-login"
                 onClick={() => switchRole('OFFICER')}
@@ -391,6 +403,16 @@ export default function LandingPage() {
                 <span>Officer Sign In</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
+              <button
+                type="button"
+                onClick={async () => {
+                  await loginOfficer('REV-MH-PN-4091', 'admin@revenue2026', '8912', 'Pune', 'Haveli', 'Sub-Divisional Revenue Officer (SDO)');
+                  router.push('/officer/dashboard');
+                }}
+                className="w-full text-center block text-xs text-stone-800 font-semibold hover:underline cursor-pointer"
+              >
+                Explore Officer Verification Workspace Demo →
+              </button>
             </div>
           </div>
         </div>
