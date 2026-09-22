@@ -11,8 +11,8 @@ export default function CitizenLoginPage() {
   const router = useRouter();
   const { loginCitizen } = useAuth();
   const [loginMethod, setLoginMethod] = useState<'email' | 'mobile' | 'aadhaar'>('email');
-  const [identifier, setIdentifier] = useState('ramesh.patil@gmail.com');
-  const [passwordOrOtp, setPasswordOrOtp] = useState('password123');
+  const [identifier, setIdentifier] = useState('');
+  const [passwordOrOtp, setPasswordOrOtp] = useState('');
   const [captchaInput, setCaptchaInput] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);

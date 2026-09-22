@@ -151,14 +151,16 @@ class SarvamDocAIExtractor:
         content_type = self._get_content_type(file_name)
         send_bytes = file_bytes
         send_filename = file_name
+        total_pages = 1
 
-        # Auto-trim PDFs over 10 pages to adhere to Sarvam AI Doc AI 10-page request limit
+        # Calculate exact document page count & auto-trim PDFs over 10 pages
         if file_name.lower().endswith(".pdf"):
             try:
                 import pymupdf
                 doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-                if len(doc) > 10:
-                    logger.info(f"{file_name} has {len(doc)} pages. Trimming to first 10 pages for Sarvam AI 10-page limit...")
+                total_pages = len(doc)
+                if total_pages > 10:
+                    logger.info(f"{file_name} has {total_pages} pages. Trimming to first 10 pages for Sarvam AI 10-page limit...")
                     sub_doc = pymupdf.open()
                     sub_doc.insert_pdf(doc, from_page=0, to_page=9)
                     send_bytes = sub_doc.tobytes()

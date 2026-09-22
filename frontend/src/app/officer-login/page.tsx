@@ -1,32 +1,76 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldCheck, Lock, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { LGD_MAHARASHTRA_DISTRICTS } from '@/lib/lgdMaster';
 
 export default function OfficerLoginPage() {
   const router = useRouter();
   const { loginOfficer } = useAuth();
 
-  const [employeeId, setEmployeeId] = useState('REV-MH-PN-4091');
+  const [email, setEmail] = useState('');
   const [designation, setDesignation] = useState('Sub-Divisional Revenue Officer (SDO)');
-  const [district, setDistrict] = useState('Pune');
-  const [tehsil, setTehsil] = useState('Haveli');
-  const [password, setPassword] = useState('admin@revenue2026');
-  const [securityPin, setSecurityPin] = useState('8912');
+  const [district, setDistrict] = useState('');
+  const [tehsil, setTehsil] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [dbDistricts, setDbDistricts] = useState<string[]>([]);
+  const [dbTehsilsMap, setDbTehsilsMap] = useState<Record<string, string[]>>({});
+
+  // Fetch master LGD JSON directly from public.lgd_master table in Supabase
+  useEffect(() => {
+    async function loadDbJurisdictions() {
+      try {
+        const { data: lgdData, error } = await supabase
+          .from('lgd_master')
+          .select('district_code, district_name_en, district_name_mr, tehsils');
+
+        if (error) {
+          console.warn('Supabase lgd_master query notice:', error);
+          return;
+        }
+
+        if (lgdData && lgdData.length > 0) {
+          const distList: string[] = [];
+          const tMap: Record<string, string[]> = {};
+
+          lgdData.forEach((row: any) => {
+            const distName = row.district_name_en;
+            distList.push(distName);
+            const tehsils = Array.isArray(row.tehsils)
+              ? row.tehsils.map((t: any) => t.en)
+              : [];
+            tMap[distName] = tehsils;
+          });
+
+          setDbDistricts(distList);
+          setDbTehsilsMap(tMap);
+        }
+      } catch (err) {
+        console.warn('DB lgd_master fetch exception:', err);
+      }
+    }
+    loadDbJurisdictions();
+  }, []);
+
+  const availableTehsils = dbTehsilsMap[district] || (
+    LGD_MAHARASHTRA_DISTRICTS.find(
+      d => d.en.toLowerCase() === district.toLowerCase() || d.mr === district
+    )?.tehsils.map(t => t.en) || ['Jalgaon']
+  );
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       await loginOfficer(
-        employeeId || 'REV-MH-PN-4091', 
-        password || 'admin@revenue2026', 
-        securityPin || '8912',
+        email || 'officer.jalgaon@revenue.gov.in',
+        password || 'admin@jalgaon2026',
         district,
         tehsil,
         designation
@@ -56,20 +100,22 @@ export default function OfficerLoginPage() {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
+            {/* 1. Official Email Address */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-stone-700">
-                Government Officer / Employee ID
+                Official Email Address
               </label>
               <input
-                type="text"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                placeholder="Enter officer employee ID"
-                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg font-mono text-stone-900 uppercase placeholder:text-stone-400 placeholder:font-sans placeholder:normal-case"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="officer.patil@revenue.gov.in"
+                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg text-stone-900 placeholder:text-stone-400 font-medium"
                 required
               />
             </div>
 
+            {/* 2. Designation / Cadre */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-stone-700">
                 Designation / Cadre
@@ -86,7 +132,7 @@ export default function OfficerLoginPage() {
               </select>
             </div>
 
-            {/* Jurisdiction Selectors */}
+            {/* 3. Assigned Jurisdiction Selectors */}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className="block text-xs font-semibold text-stone-700">
@@ -95,18 +141,23 @@ export default function OfficerLoginPage() {
                 <select
                   value={district}
                   onChange={(e) => {
-                    setDistrict(e.target.value);
-                    if (e.target.value === 'Nashik') setTehsil('Nashik City');
-                    else if (e.target.value === 'Satara') setTehsil('Satara Sadar');
-                    else setTehsil('Haveli');
+                    const newDistName = e.target.value;
+                    setDistrict(newDistName);
+                    const list = dbTehsilsMap[newDistName] || [];
+                    if (list.length > 0) {
+                      setTehsil(list[0]);
+                    } else {
+                      setTehsil('');
+                    }
                   }}
                   className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
                 >
-                  <option value="Pune">Pune</option>
-                  <option value="Nashik">Nashik</option>
-                  <option value="Satara">Satara</option>
-                  <option value="Solapur">Solapur</option>
-                  <option value="Nagpur">Nagpur</option>
+                  <option value="" disabled>-- Select District --</option>
+                  {(dbDistricts.length > 0 ? dbDistricts : LGD_MAHARASHTRA_DISTRICTS.map(d => d.en)).map((distName) => (
+                    <option key={distName} value={distName}>
+                      {distName}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -119,64 +170,27 @@ export default function OfficerLoginPage() {
                   onChange={(e) => setTehsil(e.target.value)}
                   className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
                 >
-                  {district === 'Pune' && (
-                    <>
-                      <option value="Haveli">Haveli</option>
-                      <option value="Baramati">Baramati</option>
-                      <option value="Khed (Rajgurunagar)">Khed</option>
-                      <option value="Shirur">Shirur</option>
-                      <option value="Maval">Maval</option>
-                    </>
-                  )}
-                  {district === 'Nashik' && (
-                    <>
-                      <option value="Nashik City">Nashik City</option>
-                      <option value="Niphad">Niphad</option>
-                      <option value="Malegaon">Malegaon</option>
-                    </>
-                  )}
-                  {district === 'Satara' && (
-                    <>
-                      <option value="Satara Sadar">Satara Sadar</option>
-                      <option value="Karad">Karad</option>
-                      <option value="Wai">Wai</option>
-                    </>
-                  )}
-                  {['Solapur', 'Nagpur'].includes(district) && (
-                    <>
-                      <option value="Central Tehsil">Central Tehsil</option>
-                      <option value="Rural Sub-Division">Rural Sub-Division</option>
-                    </>
-                  )}
+                  <option value="" disabled>-- Select Tehsil --</option>
+                  {availableTehsils.map((tName) => (
+                    <option key={tName} value={tName}>
+                      {tName}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
+            {/* 4. Password */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-stone-700">
-                Departmental SSO Password
+                Password
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter departmental password"
-                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg text-stone-900 placeholder:text-stone-400"
-                required
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-stone-700">
-                Hardware Token / 4-Digit Security PIN
-              </label>
-              <input
-                type="password"
-                maxLength={4}
-                value={securityPin}
-                onChange={(e) => setSecurityPin(e.target.value)}
-                placeholder="• • • •"
-                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg font-mono tracking-widest text-center text-stone-900 placeholder:text-stone-400"
+                placeholder="Enter password"
+                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg text-stone-900 placeholder:text-stone-400 font-medium"
                 required
               />
             </div>
@@ -184,26 +198,29 @@ export default function OfficerLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-stone-sm transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-70"
+              className="w-full py-2.5 px-4 bg-stone-900 hover:bg-black text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin text-stone-400" />
                   <span>Authenticating Officer...</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="w-4 h-4 text-terracotta-400" />
-                  <span>Authenticate</span>
+                  <ShieldCheck className="w-4 h-4 text-orange-400" />
+                  <span>Authenticate &amp; Open Queue</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="pt-3 border-t border-stone-100 text-center text-xs text-stone-500">
-            <Link href="/" className="text-stone-700 hover:text-stone-950 hover:underline font-semibold">
-              ← Back to Home
+          <div className="pt-2 text-center">
+            <Link
+              href="/"
+              className="text-xs text-stone-500 hover:text-stone-800 transition-colors"
+            >
+              &larr; Back to Home
             </Link>
           </div>
         </div>

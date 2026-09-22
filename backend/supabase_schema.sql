@@ -3,16 +3,49 @@
 -- Smart India Hackathon 2026 • Problem Statement 26018
 -- ==============================================================================
 
--- 1. Profiles Table (Users: Citizens & SDO Officers)
+-- 1. Profiles Table (Users: Citizens, Revenue Officers & Admins)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     role VARCHAR(20) NOT NULL CHECK (role IN ('CITIZEN', 'OFFICER', 'ADMIN')),
     full_name TEXT NOT NULL,
     phone_number VARCHAR(15),
     designation TEXT,
-    district TEXT,
+    employee_id TEXT,
+    district TEXT, -- Assigned Jurisdiction District for OFFICERS & ADMINS (NULL for CITIZENS)
+    tehsil TEXT,   -- Assigned Jurisdiction Tehsil for OFFICERS & ADMINS (NULL for CITIZENS)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Automatic Profile Creation Trigger on Supabase Auth User Signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, role, full_name, phone_number, designation, employee_id, district, tehsil)
+    VALUES (
+        new.id,
+        COALESCE(new.raw_user_meta_data->>'role', 'CITIZEN'),
+        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+        new.raw_user_meta_data->>'phone_number',
+        new.raw_user_meta_data->>'designation',
+        new.raw_user_meta_data->>'employeeId',
+        new.raw_user_meta_data->>'district',
+        new.raw_user_meta_data->>'tehsil'
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        role = EXCLUDED.role,
+        full_name = EXCLUDED.full_name,
+        district = EXCLUDED.district,
+        tehsil = EXCLUDED.tehsil;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
 
 -- 2. Land Records Table (Supporting all 12 SIH Fields)
 CREATE TABLE IF NOT EXISTS public.land_records (
@@ -100,6 +133,22 @@ ON public.audit_logs FOR SELECT USING (true);
 
 CREATE POLICY "Allow system insert audit logs" 
 ON public.audit_logs FOR INSERT WITH CHECK (true);
+
+-- 6. Storage Bucket RLS Policies (Strict User Document Isolation)
+-- Users can only upload and read files in their own folder: land-record-documents/{user_id}/*
+CREATE POLICY "Users access own document folder, Officers access all"
+ON storage.objects FOR ALL
+USING (
+    bucket_id = 'land-record-documents' 
+    AND (
+        (storage.foldername(name))[1] = auth.uid()::text
+        OR EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE id = auth.uid() AND role = 'OFFICER'
+        )
+        OR auth.role() = 'anon'
+    )
+);
 
 -- 6. Insert Mock Records for Immediate Demo
 INSERT INTO public.land_records (

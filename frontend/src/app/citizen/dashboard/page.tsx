@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { MOCK_RECORDS } from '@/data/mockData';
 import { LandRecord } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import { supabase } from '@/lib/supabaseClient';
 import { 
   UploadCloud, 
   X, 
@@ -17,56 +17,106 @@ import {
   FileCheck2,
   Eye,
   ShieldCheck,
-  FolderOpen
+  FolderOpen,
+  RefreshCw
 } from 'lucide-react';
 
 export default function CitizenDashboardPage() {
   const { user } = useAuth();
-  const [records, setRecords] = useState<LandRecord[]>(MOCK_RECORDS);
+  const [records, setRecords] = useState<LandRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState<LandRecord | null>(null);
 
-  // Sync user-submitted records from localStorage on client mount
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedStr = localStorage.getItem('user_submitted_records');
-        if (savedStr) {
-          const saved: LandRecord[] = JSON.parse(savedStr);
-          // Combine saved records with MOCK_RECORDS, avoiding duplicates
-          const combined = [...saved, ...MOCK_RECORDS.filter(m => !saved.some(s => s.id === m.id))];
-          setRecords(combined);
-        }
-      } catch (e) {
-        console.error('LocalStorage load error:', e);
+  const fetchUserDashboardFromDb = async () => {
+    if (!user?.id) {
+      setRecords([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('land_records')
+        .select('*')
+        .or(`created_by.eq.${user.id},created_by.is.null`)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching citizen dashboard DB records:', error);
+        setRecords([]);
+      } else if (data) {
+        const mapped: LandRecord[] = data.map((row: any) => ({
+          id: row.id,
+          applicationNo: row.application_no || row.id,
+          documentType: row.document_type || '7/12 Extract (Record of Rights)',
+          ownerName: typeof row.owner_name === 'object' && row.owner_name !== null
+            ? row.owner_name
+            : { value: row.owner_name || '', confidence: row.overall_confidence || 0.95 },
+          coOwners: Array.isArray(row.co_owners) ? row.co_owners : [],
+          surveyNumber: typeof row.survey_number === 'object' && row.survey_number !== null
+            ? row.survey_number
+            : { value: row.survey_number || '', confidence: row.overall_confidence || 0.95 },
+          khasraNumber: typeof row.khasra_number === 'object' && row.khasra_number !== null
+            ? row.khasra_number
+            : { value: row.khasra_number || '', confidence: row.overall_confidence || 0.95 },
+          khataNumber: typeof row.khata_number === 'object' && row.khata_number !== null
+            ? row.khata_number
+            : { value: row.khata_number || '', confidence: row.overall_confidence || 0.95 },
+          area: typeof row.area === 'object' && row.area !== null
+            ? row.area
+            : { value: String(row.area || ''), confidence: row.overall_confidence || 0.95 },
+          areaUnit: row.area_unit || 'Hectares',
+          village: typeof row.village === 'object' && row.village !== null
+            ? row.village
+            : { value: row.village || '', confidence: row.overall_confidence || 0.95 },
+          tehsil: typeof row.tehsil === 'object' && row.tehsil !== null
+            ? row.tehsil
+            : { value: row.tehsil || '', confidence: row.overall_confidence || 0.95 },
+          district: typeof row.district === 'object' && row.district !== null
+            ? row.district
+            : { value: row.district || '', confidence: row.overall_confidence || 0.95 },
+          state: row.state || 'Maharashtra',
+          landClassification: typeof row.land_classification === 'object' && row.land_classification !== null
+            ? row.land_classification
+            : { value: row.land_classification || '', confidence: row.overall_confidence || 0.95 },
+          ownershipDetails: typeof row.ownership_details === 'object' && row.ownership_details !== null
+            ? row.ownership_details
+            : { value: row.ownership_details || '', confidence: row.overall_confidence || 0.95 },
+          mutationNumber: typeof row.mutation_number === 'object' && row.mutation_number !== null
+            ? row.mutation_number
+            : { value: row.mutation_number || '', confidence: row.overall_confidence || 0.95 },
+          registrationInfo: typeof row.registration_info === 'object' && row.registration_info !== null
+            ? row.registration_info
+            : { value: row.registration_info || '', confidence: row.overall_confidence || 0.95 },
+          overallConfidence: row.overall_confidence || 0.95,
+          status: row.status || 'UNDER_VERIFICATION',
+          submissionDate: row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          assignedDistrict: row.district || 'Pune',
+          assignedTehsil: row.tehsil || 'Haveli',
+          assignedOfficer: row.assigned_officer || 'Unassigned Tehsil Pool',
+          validationFlags: row.validation_flags || [],
+          documentPages: row.document_pages || 1,
+          supportingDocuments: row.supporting_documents || [],
+          submittedBy: typeof row.owner_name === 'string' ? row.owner_name : (row.owner_name?.value || 'Citizen'),
+          submittedById: row.created_by || '',
+          createdBy: row.created_by || '',
+          documentUrl: row.document_url || undefined
+        }));
+        setRecords(mapped);
       }
+    } catch (e) {
+      console.error('Citizen dashboard fetch error:', e);
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  };
 
-  // Filter to display records associated with or submitted by the authenticated citizen
-  const citizenRecords = records.filter(r => {
-    if (!user) return true;
-    const userName = (user.name || '').toLowerCase().trim();
-    const recordOwner = (r.ownerName?.value || '').toLowerCase().trim();
-    
-    // 1. Matched by active submission user ID or name
-    if (r.submittedById === user.id || (r.submittedBy && r.submittedBy.toLowerCase() === userName)) {
-      return true;
-    }
-    // 2. Matched by extracted land owner name
-    if (userName && recordOwner && (recordOwner.includes(userName) || userName.includes(recordOwner))) {
-      return true;
-    }
-    // 3. Fallback match for default demo user Ramesh Patil
-    if (userName.includes('patil') && recordOwner.includes('patil')) {
-      return true;
-    }
-    // 4. Default: Show records submitted in this session (so newly submitted documents are NEVER hidden!)
-    if (r.submittedBy) {
-      return true;
-    }
-    return false;
-  });
+  useEffect(() => {
+    fetchUserDashboardFromDb();
+  }, [user?.id]);
 
+  const citizenRecords = records;
   const totalSubmitted = citizenRecords.length;
   const inVerification = citizenRecords.filter(r => r.status === 'PENDING_VERIFICATION' || r.status === 'IN_REVIEW' || r.status === 'UNDER_VERIFICATION').length;
   const verifiedCount = citizenRecords.filter(r => r.status === 'VERIFIED').length;
@@ -75,10 +125,10 @@ export default function CitizenDashboardPage() {
   return (
     <div className="space-y-6">
       {/* Top Welcome Header */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E8E6DF] shadow-stone-sm">
+      <div className="bg-white p-6 rounded-2xl border border-[#E8E6DF] shadow-stone-sm flex items-center justify-between">
         <div className="space-y-1">
           <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider">
-            Citizen Workspace • नागरिक पोर्टल
+            Citizen Workspace • नागरिक पोर्टल (Live Supabase DB)
           </div>
           <h1 className="text-xl font-bold text-stone-900 tracking-tight font-serif">
             Welcome, {user?.name || 'Citizen'}
@@ -89,6 +139,14 @@ export default function CitizenDashboardPage() {
             <span>Aadhaar: <strong className="text-stone-700 font-mono font-semibold">•••• {user?.aadhaarLast4 || '8842'}</strong></span>
           </div>
         </div>
+
+        <button
+          onClick={fetchUserDashboardFromDb}
+          className="p-2 text-stone-500 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-xl border border-[#D7D4CA] transition-colors"
+          title="Refresh Dashboard from DB"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Metrics Row */}
@@ -137,9 +195,6 @@ export default function CitizenDashboardPage() {
             <h2 className="text-sm font-bold text-stone-900 tracking-tight">
               My Digitization & Verification Requests
             </h2>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Strictly filtered to records registered under your name ({user?.name || 'Citizen'})
-            </p>
           </div>
           {citizenRecords.length > 0 && (
             <Link
@@ -152,14 +207,19 @@ export default function CitizenDashboardPage() {
           )}
         </div>
 
-        {citizenRecords.length === 0 ? (
+        {loading ? (
+          <div className="p-12 text-center space-y-3">
+            <div className="w-8 h-8 rounded-full border-2 border-stone-300 border-t-terracotta-700 animate-spin mx-auto" />
+            <div className="text-xs font-semibold text-stone-600">Loading your applications from database...</div>
+          </div>
+        ) : citizenRecords.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-stone-100 text-stone-400 flex items-center justify-center mx-auto">
               <FolderOpen className="w-6 h-6" />
             </div>
             <div className="text-sm font-bold text-stone-900">No Land Records Submitted Yet</div>
             <p className="text-xs text-stone-500 max-w-sm mx-auto">
-              You haven’t submitted any 7/12 extracts or mutation deeds under your name. Click the button below to upload your first document.
+              You haven’t submitted any 7/12 extracts or mutation deeds under your account. Click the button below to upload your first document.
             </p>
             <Link
               href="/citizen/upload"

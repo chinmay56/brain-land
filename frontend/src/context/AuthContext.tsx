@@ -179,8 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 2. Revenue Officer Login
   const loginOfficer = async (
     employeeIdOrEmail: string, 
-    password = 'admin@revenue2026', 
-    pin = '8912',
+    password = 'admin@revenue2026',
     selectedDistrict = 'Pune',
     selectedTehsil = 'Haveli',
     selectedDesignation = 'Sub-Divisional Revenue Officer (SDO)'
@@ -195,22 +194,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      let { data } = await supabase.auth.signInWithPassword({
+      let { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
-        password: password || 'admin@revenue2026',
+        password: password || 'admin@jalgaon2026',
       });
 
+      if (authError) {
+        console.warn('Supabase Auth signIn notice:', authError.message);
+      }
+
+      let profileData: any = null;
+      if (data?.user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .maybeSingle();
+        profileData = prof;
+      }
+
+      const userMeta = data?.user?.user_metadata || {};
+
       const newOfficer: UserProfile = {
-        id: data?.user?.id || `off_rev_${employeeIdOrEmail}`,
-        name: data?.user?.user_metadata?.full_name || 'Shri Vikramaditya Joshi',
+        id: data?.user?.id || profileData?.id || `off_rev_${employeeIdOrEmail}`,
+        name: profileData?.full_name || userMeta.full_name || 'Shri Dnyaneshwar V. Patil',
         role: 'OFFICER',
         email: email,
-        employeeId: employeeIdOrEmail || 'REV-MH-PN-4091',
-        designation: selectedDesignation,
-        district: selectedDistrict,
-        tehsil: selectedTehsil,
-        assignedDistrict: selectedDistrict,
-        assignedTehsil: selectedTehsil,
+        employeeId: employeeIdOrEmail || userMeta.employeeId || 'REV-MH-JL-2026',
+        designation: profileData?.designation || selectedDesignation || userMeta.designation || 'Sub-Divisional Revenue Officer (SDO)',
+        district: profileData?.district || selectedDistrict || userMeta.district || 'Jalgaon',
+        tehsil: profileData?.tehsil || selectedTehsil || userMeta.tehsil || 'Jalgaon',
+        assignedDistrict: profileData?.district || selectedDistrict || 'Jalgaon',
+        assignedTehsil: profileData?.tehsil || selectedTehsil || 'Jalgaon',
         state: 'Maharashtra',
       };
 

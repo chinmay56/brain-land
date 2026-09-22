@@ -75,11 +75,14 @@ export interface LandRecord {
   assignedOfficer?: string;
   assignedDistrict?: string;
   assignedTehsil?: string;
+  submittedBy?: string;
+  submittedById?: string;
+  createdBy?: string;
   officerRemarks?: string;
   validationFlags: ValidationFlag[];
   documentUrl?: string;
   documentPages?: number;
   supportingDocuments?: string[];
-  submittedBy?: string;
-  submittedById?: string;
+  lgdDistrictCode?: string;
+  lgdTehsilCode?: string;
 }

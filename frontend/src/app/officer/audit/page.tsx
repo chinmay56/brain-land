@@ -1,35 +1,43 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { History, ShieldCheck, FileText, UserCheck, Calendar } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function OfficerAuditPage() {
-  const auditLogs = [
-    {
-      id: 'AUD-9941',
-      recordId: 'LR-2026-1019',
-      action: 'RECORD_CERTIFIED_APPROVED',
-      officer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      timestamp: '2026-08-24 14:32 IST',
-      details: 'Approved 7/12 extract for Sunita Devi Deshmukh (Survey 131/2) with 98% AI confidence match.'
-    },
-    {
-      id: 'AUD-9940',
-      recordId: 'LR-2026-1021',
-      action: 'OFFICER_MANUAL_CORRECTION',
-      officer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      timestamp: '2026-08-27 02:20 IST',
-      details: 'Corrected Mutation Number from AI extracted "58?1" to verified physical register value "5821".'
-    },
-    {
-      id: 'AUD-9938',
-      recordId: 'LR-2026-1018',
-      action: 'RECORD_REJECTED_FADED_SCAN',
-      officer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      timestamp: '2026-08-20 11:15 IST',
-      details: 'Rejected submission due to illegible ink bleeds on survey sub-division index. Remarks sent to citizen.'
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchAuditLogs() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.warn('Audit log fetch notice:', error);
+          setAuditLogs([]);
+        } else if (data) {
+          setAuditLogs(data.map((r: any) => ({
+            id: r.id || `AUD-${Date.now()}`,
+            recordId: r.record_id || r.land_record_id || 'N/A',
+            action: r.action || 'ACTION_LOGGED',
+            officer: r.officer_name || r.performed_by || 'Officer',
+            timestamp: r.created_at ? new Date(r.created_at).toLocaleString() : 'Recent',
+            details: r.details || r.remarks || 'Administrative action logged in system.'
+          })));
+        }
+      } catch (err) {
+        console.warn('Audit log exception:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
+    fetchAuditLogs();
+  }, []);
 
   return (
     <div className="space-y-6">

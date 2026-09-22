@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 import { MOCK_RECORDS } from '@/data/mockData';
 import { 
   UploadCloud, 
@@ -33,6 +34,7 @@ export default function CitizenUploadPage() {
 
   const [step, setStep] = useState<'upload' | 'processing' | 'preview'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('Submitting document to Sarvam Vision-Language Model...');
   const [isEditing, setIsEditing] = useState(true);
@@ -81,9 +83,54 @@ export default function CitizenUploadPage() {
 
   const [proposedData, setProposedData] = useState({ ...extractedData });
 
+  // Restore state from sessionStorage on page refresh
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('active_extraction_preview');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.step === 'preview' && parsed.proposedData) {
+            setExtractedData(parsed.extractedData || parsed.proposedData);
+            setProposedData(parsed.proposedData);
+            if (parsed.filePreviewUrl) setFilePreviewUrl(parsed.filePreviewUrl);
+            setStep('preview');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to restore preview state:', err);
+      }
+    }
+  }, []);
+
+  // Sync state changes to sessionStorage when in preview step
+  useEffect(() => {
+    if (step === 'preview' && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('active_extraction_preview', JSON.stringify({
+          step: 'preview',
+          extractedData,
+          proposedData,
+          filePreviewUrl
+        }));
+      } catch (err) {
+        console.error('Failed to persist preview state:', err);
+      }
+    }
+  }, [step, extractedData, proposedData, filePreviewUrl]);
+
+  const processFile = (file: File) => {
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFilePreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      processFile(e.target.files[0]);
     }
   };
 
@@ -91,7 +138,7 @@ export default function CitizenUploadPage() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -149,6 +196,15 @@ export default function CitizenUploadPage() {
 
         setExtractedData(populated);
         setProposedData(populated);
+
+        // Save preview state to sessionStorage
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('active_extraction_preview', JSON.stringify({
+            step: 'preview',
+            extractedData: populated,
+            proposedData: populated
+          }));
+        }
       } else {
         console.error('Backend extraction error:', res.statusText);
       }
@@ -256,7 +312,8 @@ export default function CitizenUploadPage() {
       documentPages: 2,
       supportingDocuments: proposedData.supporting_documents,
       submittedBy: user?.name || 'Citizen',
-      submittedById: user?.id || 'usr_cit_001'
+      submittedById: user?.id || 'usr_cit_001',
+      documentUrl: filePreviewUrl || undefined
     };
 
     // Save to active in-memory list
@@ -274,7 +331,70 @@ export default function CitizenUploadPage() {
       }
     }
 
-    // Save to FastAPI backend if available
+    // Direct Supabase Storage & DB Insert (Triggers WebSocket Realtime Event to Officers!)
+    try {
+      const docDistrict = (proposedData.district?.value || 'Pune').trim();
+      const docTehsil = (proposedData.tehsil?.value || 'Haveli').trim();
+      
+      const safeDistrict = docDistrict.replace(/[^\w\.-]/g, '_');
+      const safeTehsil = docTehsil.replace(/[^\w\.-]/g, '_');
+      const safeFileName = selectedFile ? selectedFile.name.replace(/[^\w\.-]/g, '_') : 'document.pdf';
+
+      let finalDocUrl: string | null = null;
+
+      if (selectedFile) {
+        try {
+          const storagePath = `${user?.id || 'usr_cit_001'}/${safeDistrict}/${safeTehsil}/${newRecord.applicationNo}/${safeFileName}`;
+          const { data: uploadData } = await supabase.storage.from('land-record-documents').upload(storagePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+          if (uploadData) {
+            const { data: pubData } = supabase.storage.from('land-record-documents').getPublicUrl(storagePath);
+            if (pubData?.publicUrl) {
+              finalDocUrl = pubData.publicUrl;
+              newRecord.documentUrl = pubData.publicUrl;
+              (newRecord as any).document_url = pubData.publicUrl;
+            }
+          }
+        } catch (stErr) {
+          console.warn('Supabase storage upload notice:', stErr);
+        }
+      }
+
+      const { data: dbData, error: dbErr } = await supabase.from('land_records').upsert({
+        id: newRecordId,
+        application_no: newRecord.applicationNo,
+        document_type: newRecord.documentType,
+        state: newRecord.state,
+        district: docDistrict,
+        tehsil: docTehsil,
+        village: proposedData.village?.value || 'Hadapsar',
+        survey_number: proposedData.survey_number?.value || '124/2',
+        khasra_number: proposedData.khasra_number?.value || null,
+        khata_number: proposedData.khata_number?.value || null,
+        owner_name: proposedData.owner_name?.value || 'Land Owner',
+        co_owners: proposedData.co_owners || [],
+        area: parseFloat(proposedData.area?.value || '2.45'),
+        mutation_number: proposedData.mutation_number?.value || null,
+        land_classification: proposedData.land_classification?.value || null,
+        registration_info: proposedData.registration_info || {},
+        status: 'UNDER_VERIFICATION',
+        overall_confidence: proposedData.overall_confidence || 0.94,
+        created_by: user?.id || null,
+        document_url: finalDocUrl || null
+      }).select();
+
+      if (dbErr) {
+        console.error('Supabase DB upsert error:', dbErr);
+      } else {
+        console.log('Successfully upserted record to Supabase DB:', dbData);
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase DB insert notice:', dbErr);
+    }
+
+    // Sync to FastAPI backend if available
     try {
       await fetch('http://localhost:8000/api/land-records', {
         method: 'POST',
@@ -283,6 +403,10 @@ export default function CitizenUploadPage() {
       });
     } catch (err) {
       console.warn('Backend sync warning:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('active_extraction_preview');
     }
 
     setTimeout(() => {
@@ -417,46 +541,6 @@ export default function CitizenUploadPage() {
       {/* STEP 3: Preview the 12 SIH Fields */}
       {step === 'preview' && (
         <form onSubmit={handleSubmitVerification} className="space-y-5">
-          {/* Record Completeness Bar */}
-          <div className="bg-white p-5 rounded-2xl border border-[#E8E6DF] shadow-stone-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-stone-900">
-                  Digitization Completeness: {completeness.percentage}% ({completeness.filled}/{completeness.total} Fields Populated)
-                </span>
-                <div className="text-[11px] text-stone-500 mt-0.5">
-                  Source: {proposedData.supporting_documents.join(' + ') || selectedFile?.name}
-                </div>
-              </div>
-
-              {/* Upload Supporting Document to fill remaining nulls */}
-              <div>
-                <input 
-                  type="file"
-                  ref={supportingFileInputRef}
-                  onChange={handleSupportingFileUpload}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => supportingFileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 bg-terracotta-50 hover:bg-terracotta-100 text-terracotta-800 border border-terracotta-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors shadow-stone-sm"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>Add Supporting Deed (Sale Deed / 8A)</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-emerald-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${completeness.percentage}%` }}
-              />
-            </div>
-          </div>
-
           {/* Form Header */}
           <div className="flex items-center justify-between bg-white px-6 py-3 rounded-2xl border border-[#E8E6DF] shadow-stone-sm">
             <div>
@@ -523,7 +607,7 @@ export default function CitizenUploadPage() {
             <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
               <Layers className="w-4 h-4 text-terracotta-700" />
               <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider">
-                2. Cadastral & Spatial Identifiers (GIS Ready)
+                2. Cadastral &amp; Spatial Identifiers
               </h3>
             </div>
 

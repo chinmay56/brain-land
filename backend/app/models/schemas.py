@@ -76,6 +76,8 @@ class LandRecordResponse(LandRecordBase):
     document_url: Optional[str] = None
     document_pages: int = 1
     supporting_documents: List[Any] = []
+    created_by: Optional[str] = None
+    submitted_by_id: Optional[str] = None
 
 class OfficerVerificationAction(BaseModel):
     record_id: str
