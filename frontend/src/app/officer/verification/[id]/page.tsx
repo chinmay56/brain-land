@@ -7,6 +7,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
+import { writeAuditLog } from '@/lib/auditLog';
 
 const PdfDocumentViewer = dynamic(
   () => import('@/components/common/PdfDocumentViewer').then((mod) => mod.PdfDocumentViewer),
@@ -35,7 +37,8 @@ import {
   Check,
   ExternalLink,
   RotateCcw,
-  RotateCw
+  RotateCw,
+  History
 } from 'lucide-react';
 
 export default function OfficerVerificationWorkspacePage() {
@@ -43,7 +46,9 @@ export default function OfficerVerificationWorkspacePage() {
   const router = useRouter();
   const recordId = (params?.id as string) || 'LR-2026-6164';
 
+  const { user } = useAuth();
   const [dbRecord, setDbRecord] = useState<any>(null);
+  const [auditRows, setAuditRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -179,6 +184,21 @@ export default function OfficerVerificationWorkspacePage() {
       }
     }
     loadRecordFromDb();
+
+    async function loadAuditTrail() {
+      try {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .eq('record_id', recordId)
+          .order('created_at', { ascending: false });
+        if (error) console.warn('Audit trail fetch notice:', error);
+        else setAuditRows(data || []);
+      } catch (err) {
+        console.warn('Audit trail fetch notice:', err);
+      }
+    }
+    loadAuditTrail();
   }, [recordId]);
 
   const handleFieldChange = (fieldKey: keyof typeof fields, newValue: string) => {
@@ -191,9 +211,20 @@ export default function OfficerVerificationWorkspacePage() {
     }));
   };
 
+  const officerName = user?.name || user?.employeeId || 'Officer';
+
+  /** Every field the officer typed over, with what the AI had read there. */
+  const officerEdits = () => {
+    const changes: Record<string, { ai: string; officer: string }> = {};
+    Object.entries(fields).forEach(([key, f]) => {
+      if (f.ai !== f.officer) changes[key] = { ai: f.ai, officer: f.officer };
+    });
+    return changes;
+  };
+
   const handleApprove = async () => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('land_records')
         .update({
           status: 'VERIFIED',
@@ -206,6 +237,21 @@ export default function OfficerVerificationWorkspacePage() {
           registration_info: { value: fields.registrationInfo?.officer, confidence: fields.registrationInfo?.confidence || 0.95 },
         })
         .eq('id', recordId);
+
+      if (error) {
+        console.warn('DB update warning:', error);
+      } else {
+        // Only after the record itself is certified — an audit row for a
+        // certification that never landed would be a lie.
+        await writeAuditLog({
+          recordId,
+          action: 'CERTIFIED_APPROVED',
+          role: 'OFFICER',
+          performedBy: officerName,
+          details: officerRemarks,
+          changes: officerEdits(),
+        });
+      }
     } catch (e) {
       console.warn('DB update warning:', e);
     }
@@ -219,13 +265,26 @@ export default function OfficerVerificationWorkspacePage() {
 
   const handleReject = async () => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('land_records')
         .update({
           status: 'REJECTED',
           officer_remarks: `${rejectReason}: ${rejectRemarks}`,
         })
         .eq('id', recordId);
+
+      if (error) {
+        console.warn('DB update warning:', error);
+      } else {
+        await writeAuditLog({
+          recordId,
+          action: 'REJECTED',
+          role: 'OFFICER',
+          performedBy: officerName,
+          details: `${rejectReason}: ${rejectRemarks}`,
+          changes: officerEdits(),
+        });
+      }
     } catch (e) {
       console.warn('DB update warning:', e);
     }
@@ -795,6 +854,43 @@ export default function OfficerVerificationWorkspacePage() {
                 className="w-full p-2 border border-[#D7D4CA] rounded-lg text-stone-900 text-xs bg-stone-50/50"
               />
             </div>
+          </div>
+
+          {/* Provenance history for this record */}
+          <div className="bg-white rounded-xl border border-[#E8E6DF] p-5 shadow-stone-sm">
+            <div className="border-b border-stone-100 pb-3 flex items-center gap-2">
+              <History className="w-4 h-4 text-terracotta-700" />
+              <div>
+                <h2 className="text-sm font-bold text-stone-900 tracking-tight">History</h2>
+                <p className="text-[11px] text-stone-500">
+                  Every recorded action on this record, newest first.
+                </p>
+              </div>
+            </div>
+
+            {auditRows.length === 0 ? (
+              <p className="text-[11px] text-stone-500 pt-3">
+                No actions recorded against this record yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-stone-100">
+                {auditRows.map((row) => (
+                  <div key={row.id} className="py-2.5 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="px-1.5 py-0.5 rounded bg-terracotta-50 text-terracotta-900 border border-terracotta-200 text-[10px] font-bold">
+                        {row.action}
+                      </span>
+                      <div className="text-[11px] text-stone-600 mt-1 truncate">
+                        {row.performed_by}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-stone-400 flex-shrink-0">
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

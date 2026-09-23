@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import { writeAuditLog } from '@/lib/auditLog';
 import { MOCK_RECORDS } from '@/data/mockData';
 import { 
   UploadCloud, 
@@ -118,6 +119,8 @@ export default function CitizenUploadPage() {
     overall_confidence: number;
     validation_flags: any[];
     supporting_documents: string[];
+    /** SARVAM_LIVE or DEMO_FALLBACK — recorded on the audit row at submit. */
+    data_source: string;
   }>({
     owner_name: { value: '', confidence: 0.0 },
     co_owners: [],
@@ -136,7 +139,8 @@ export default function CitizenUploadPage() {
     registration_info: { value: '', confidence: 0.0 },
     overall_confidence: 0.0,
     validation_flags: [],
-    supporting_documents: []
+    supporting_documents: [],
+    data_source: 'UNKNOWN'
   });
 
   const [proposedData, setProposedData] = useState({ ...extractedData });
@@ -249,7 +253,8 @@ export default function CitizenUploadPage() {
           registration_info: data.registration_info || { value: '', confidence: 0.0, sourceDoc: '' },
           overall_confidence: data.overall_confidence || 0.94,
           validation_flags: flags,
-          supporting_documents: [selectedFile.name]
+          supporting_documents: [selectedFile.name],
+          data_source: data.data_source || json.data_source || 'UNKNOWN'
         };
 
         setExtractedData(populated);
@@ -449,6 +454,44 @@ export default function CitizenUploadPage() {
         console.error('Supabase DB upsert error:', dbErr);
       } else {
         console.log('Successfully upserted record to Supabase DB:', dbData);
+
+        // Provenance, written only once the record itself exists — audit_logs
+        // has a foreign key onto land_records.
+        const citizenName = user?.name || 'Citizen';
+        await writeAuditLog({
+          recordId: newRecordId,
+          action: 'OCR_EXTRACTED',
+          role: 'CITIZEN',
+          performedBy: citizenName,
+          details: `Extracted via ${proposedData.data_source || 'UNKNOWN'}`,
+          changes: buildOcrExtractedData(proposedData),
+        });
+
+        // What the citizen typed over before submitting, against what the AI read.
+        const citizenEdits: Record<string, { ai: string; citizen: string }> = {};
+        CONFIDENCE_FIELDS.forEach((name) => {
+          const ai = (extractedData as any)?.[name]?.value;
+          const citizen = (proposedData as any)?.[name]?.value;
+          if (ai !== undefined && citizen !== undefined && String(ai) !== String(citizen)) {
+            citizenEdits[name] = { ai: String(ai), citizen: String(citizen) };
+          }
+        });
+        const aiCoOwners = (extractedData.co_owners || []).join(', ');
+        const citizenCoOwners = (proposedData.co_owners || []).join(', ');
+        if (aiCoOwners !== citizenCoOwners) {
+          citizenEdits.co_owners = { ai: aiCoOwners, citizen: citizenCoOwners };
+        }
+
+        if (Object.keys(citizenEdits).length > 0) {
+          await writeAuditLog({
+            recordId: newRecordId,
+            action: 'CITIZEN_CORRECTION',
+            role: 'CITIZEN',
+            performedBy: citizenName,
+            details: `${Object.keys(citizenEdits).length} field(s) corrected before submission`,
+            changes: citizenEdits,
+          });
+        }
       }
     } catch (dbErr) {
       console.warn('Direct Supabase DB insert notice:', dbErr);
