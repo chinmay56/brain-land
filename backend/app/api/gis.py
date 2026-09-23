@@ -14,6 +14,7 @@ import json
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.services import crs_india as crs
@@ -524,10 +525,12 @@ async def plot_document(
 
     from app.services.sarvam_vision import ExtractionError
 
+    # JSONResponse rather than HTTPException: the latter nests the body under
+    # "detail", and this must match /api/extraction/process exactly.
     try:
         extracted = await sarvam_service.extract_land_record(raw, file.filename or "record.pdf")
     except ExtractionError as exc:
-        raise HTTPException(502, {
+        return JSONResponse(status_code=502, content={
             "success": False,
             "error": "EXTRACTION_FAILED",
             "reason": exc.reason,
@@ -535,7 +538,7 @@ async def plot_document(
             "http_status": exc.http_status,
         })
     except Exception as exc:                                  # pragma: no cover
-        raise HTTPException(502, {
+        return JSONResponse(status_code=502, content={
             "success": False,
             "error": "EXTRACTION_FAILED",
             "reason": f"Extraction stage failed: {type(exc).__name__}: {exc}",
@@ -614,7 +617,8 @@ async def plot_document(
             # Geometry is nested structure, not a text field — stringifying it
             # into the fields panel would print a dict at the officer.
             if key not in ("overall_confidence", "document_pages", "data_source",
-                           "co_owners", "boundaries", "chain_offset", "traverse")
+                           "co_owners", "boundaries", "chain_offset", "traverse",
+                           "learning")
         },
         "co_owners": extracted.get("co_owners") or [],
         "boundaries": document.get("boundaries", {}),

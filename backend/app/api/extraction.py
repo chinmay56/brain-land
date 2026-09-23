@@ -51,3 +51,15 @@ async def extract_from_document(file: UploadFile = File(...)):
         "validation_flags": validation_flags,
         "processing_pipeline": "Sarvam Vision OCR -> Normalization -> Business Rules Engine"
     }
+
+
+@router.get("/correction-stats")
+async def correction_stats():
+    """
+    What humans have been correcting, and what the extractor is being told
+    about it. Read-only; safe to poll from a dashboard.
+    """
+    from app.services.learning import build_prompt_hints, compute_stats
+
+    stats = compute_stats()
+    return {**stats, "hints_active": build_prompt_hints()}

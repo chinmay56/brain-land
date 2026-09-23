@@ -85,8 +85,12 @@ export default function OfficerGISPage() {
       const res = await fn();
       const body = await res.json();
       if (!res.ok) {
-        throw new Error(typeof body.detail === 'string'
-          ? body.detail : JSON.stringify(body.detail).slice(0, 400));
+        // Extraction failures now return {reason, ...} directly, matching
+        // /api/extraction/process; `detail` is still used by other 4xx routes.
+        const message = body?.reason
+          ?? (typeof body?.detail === 'string' ? body.detail : null)
+          ?? (body?.detail ? JSON.stringify(body.detail).slice(0, 400) : `Request failed (HTTP ${res.status}).`);
+        throw new Error(message);
       }
       setData(body as DocResponse);
       setSelected(body.parcels?.features?.[0]?.properties?.survey_no ?? null);

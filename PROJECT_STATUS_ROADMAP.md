@@ -17,6 +17,7 @@
 - **Strict Role Exclusion Prompting**: Enforces strict LLM schema definitions to exclude Sellers (*लिहून देणार*), Sub-Registrars, Advocates, Witnesses, and Officers from `owner_name` and `co_owners`.
 - **Auto-Trimming for 10-Page Limit**: Integrates PyMuPDF to trim documents exceeding 10 pages before sending to Sarvam AI, adhering to API limits.
 - **Extended Polling Engine**: 120-second polling timeout (60 attempts) ensuring complex multi-page VLM extraction jobs finish cleanly.
+- **Correction Feedback Loop**: `learning.py` aggregates every officer and citizen correction already recorded in `audit_logs` into per-field correction rates and an officer-verified accuracy figure, and appends a hint built from real verified corrections ("'3594' was corrected to '3601'") to the schema description of any field corrected 3+ times at a 20%+ rate — surfaced on the officer analytics tab and recorded on the extraction's own audit row.
 - **Multi-Document Record Merger**: Aggregates fields across 7/12 Extract, Sale Deed, and Mutation entries into a single unified land record.
 
 ### B. Citizen Portal Workflow

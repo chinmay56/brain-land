@@ -56,6 +56,7 @@ export default function OfficerDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [queueFilter, setQueueFilter] = useState<'ALL' | 'URGENT' | 'LOW_CONFIDENCE' | 'CONFLICTS' | 'DUPLICATES' | 'VERIFIED'>('ALL');
   const [activeTab, setActiveTab] = useState<'queue' | 'geo' | 'analytics'>('queue');
+  const [learningStats, setLearningStats] = useState<any>(null);
 
   const fetchOfficerQueueFromDb = async () => {
     setLoading(true);
@@ -139,6 +140,20 @@ export default function OfficerDashboardPage() {
       setLoading(false);
     }
   };
+
+  // Correction statistics, loaded when a tab that shows them is opened rather
+  // than on every dashboard mount. The geo tab needs them too: the accuracy
+  // metric there switches to officer-verified numbers once any exist.
+  useEffect(() => {
+    if (activeTab !== 'analytics' && activeTab !== 'geo') return;
+    let cancelled = false;
+    const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+    fetch(`${api}/api/extraction/correction-stats`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setLearningStats(j); })
+      .catch((e) => console.warn('Correction stats unavailable:', e));
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   useEffect(() => {
     fetchOfficerQueueFromDb();
@@ -651,10 +666,35 @@ export default function OfficerDashboardPage() {
             </div>
 
             <div className="flex items-center gap-6 text-xs">
-              <div>
-                <span className="text-stone-400 block text-[10px] uppercase font-semibold">Extraction accuracy</span>
-                <span className="font-mono font-bold text-stone-900 text-base">{currentDistrictData.accuracy}%</span>
-              </div>
+              {/* Once officers have verified records, accuracy can be measured
+                  against what they actually corrected rather than the model's
+                  own confidence in itself. */}
+              {learningStats?.overall?.records_verified > 0
+                && learningStats?.overall?.field_accuracy != null ? (
+                <div>
+                  <span className="text-stone-400 block text-[10px] uppercase font-semibold">
+                    Field-level accuracy (officer-verified)
+                  </span>
+                  <span className="font-mono font-bold text-stone-900 text-base">
+                    {Math.round(learningStats.overall.field_accuracy * 100)}%
+                    {learningStats?.trend?.delta != null && (
+                      <span className={`ml-1.5 text-[11px] font-sans font-semibold ${
+                        learningStats.trend.delta >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                      }`}>
+                        {learningStats.trend.delta >= 0 ? '▲' : '▼'}
+                        {Math.abs(Math.round(learningStats.trend.delta * 100))}% 7d
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <span className="text-stone-400 block text-[10px] uppercase font-semibold">
+                    Mean extraction confidence (no verified records yet)
+                  </span>
+                  <span className="font-mono font-bold text-stone-900 text-base">{currentDistrictData.accuracy}%</span>
+                </div>
+              )}
               <div className="pl-5 border-l border-stone-200">
                 <span className="text-stone-400 block text-[10px] uppercase font-semibold">Pending verification cases</span>
                 <span className="font-mono font-bold text-amber-800 text-base">{currentDistrictData.pendingCount}</span>
@@ -694,6 +734,96 @@ export default function OfficerDashboardPage() {
       {/* TAB 3: Validation status & Error statistics                              */}
       {/* ========================================================================= */}
       {activeTab === 'analytics' && (
+        <div className="space-y-6">
+        {/* What officers keep correcting, and what the extractor has been told
+            about it. Sourced from certified corrections, not self-assessment. */}
+        <div className="bg-white rounded-2xl border border-[#E8E6DF] shadow-stone-sm p-6 space-y-4">
+          <div>
+            <div className="text-[11px] font-bold text-stone-600 uppercase tracking-wider">
+              Feedback Loop
+            </div>
+            <h2 className="text-base font-bold text-stone-900 font-serif mt-0.5">
+              Extraction learning
+            </h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              Correction rates come from fields officers and citizens actually changed.
+            </p>
+          </div>
+
+          {(() => {
+            const fields = learningStats?.fields || {};
+            const rows = Object.entries(fields)
+              .filter(([, f]: [string, any]) => (f?.extracted || 0) > 0)
+              .sort((a: any, b: any) => (b[1].correction_rate || 0) - (a[1].correction_rate || 0));
+
+            if (rows.length === 0) {
+              return (
+                <p className="text-xs text-stone-500">
+                  No extractions recorded yet. Submit a record to start the loop.
+                </p>
+              );
+            }
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#E8E6DF] bg-[#FAF9F6] text-stone-600 font-semibold">
+                      <th className="py-2 px-3">Field</th>
+                      <th className="py-2 px-3">Extracted</th>
+                      <th className="py-2 px-3">Corrected</th>
+                      <th className="py-2 px-3">Correction rate</th>
+                      <th className="py-2 px-3">Last correction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(([name, f]: [string, any]) => {
+                      const last = (f.recent_pairs || [])[0];
+                      const rate = Math.round((f.correction_rate || 0) * 100);
+                      return (
+                        <tr key={name} className="border-b border-stone-50">
+                          <td className="py-2 px-3 font-mono text-stone-900">{name}</td>
+                          <td className="py-2 px-3 font-mono text-stone-600">{f.extracted}</td>
+                          <td className="py-2 px-3 font-mono text-stone-600">{f.corrected}</td>
+                          <td className={`py-2 px-3 font-mono font-bold ${
+                            rate >= 20 ? 'text-rose-700' : rate > 0 ? 'text-amber-700' : 'text-emerald-700'
+                          }`}>
+                            {rate}%
+                          </td>
+                          <td className="py-2 px-3 text-stone-600">
+                            {last ? (
+                              <span className="font-mono text-[11px]">
+                                <span className="text-stone-400 line-through">{last.ai}</span>
+                                <span className="mx-1 text-stone-400">→</span>
+                                <span className="text-stone-900 font-semibold">{last.corrected}</span>
+                              </span>
+                            ) : <span className="text-stone-300">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          <div className="text-xs pt-1 border-t border-stone-100">
+            {Object.keys(learningStats?.hints_active || {}).length > 0 ? (
+              <span className="text-stone-700">
+                Hints currently injected into the extractor:{' '}
+                <strong className="font-mono text-stone-900">
+                  {Object.keys(learningStats.hints_active).join(', ')}
+                </strong>
+              </span>
+            ) : (
+              <span className="text-stone-500">
+                None yet, needs 3+ corrections on a field.
+              </span>
+            )}
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-6">
           {/* Validation status Breakdown */}
           <div className="bg-white rounded-2xl border border-[#E8E6DF] shadow-stone-sm p-6 space-y-5">
@@ -790,6 +920,7 @@ export default function OfficerDashboardPage() {
               ))}
             </div>
           </div>
+        </div>
         </div>
       )}
     </div>

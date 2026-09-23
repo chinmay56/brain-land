@@ -1,8 +1,9 @@
+import copy
 import json
 import asyncio
 import httpx
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from app.config import settings
 from app.models.schemas import FieldConfidence
 
@@ -366,6 +367,39 @@ class SarvamDocAIExtractor:
         return "application/pdf"
 
     @staticmethod
+    def _schema_with_hints(hints: Dict[str, str]) -> Dict[str, Any]:
+        """
+        A copy of the schema with learned hints appended to the relevant field
+        descriptions. Copied, never mutated: the module-level schema is shared
+        by every request and must not accumulate hints across calls.
+        """
+        schema = copy.deepcopy(LAND_RECORD_EXTRACTION_SCHEMA)
+        properties = schema.get("properties", {})
+        for field, hint in hints.items():
+            prop = properties.get(field)
+            if isinstance(prop, dict) and prop.get("description"):
+                prop["description"] = f"{prop['description']} {hint}"
+        return schema
+
+    @staticmethod
+    def _learning_context() -> Tuple[Dict[str, str], Dict[str, Any]]:
+        """
+        Hints to apply and the snapshot to report, or empty if the loop has
+        nothing to say. Never raises: extraction does not depend on this.
+        """
+        try:
+            from app.services.learning import build_prompt_hints, compute_stats
+            hints = build_prompt_hints()
+            overall = compute_stats().get("overall", {})
+            return hints, {
+                "field_accuracy": overall.get("field_accuracy"),
+                "records_verified": overall.get("records_verified", 0),
+            }
+        except Exception as exc:
+            logger.warning("Learning hints skipped (%s).", exc)
+            return {}, {"field_accuracy": None, "records_verified": 0}
+
+    @staticmethod
     def _api_detail(response: Any) -> str:
         """The API's own words for why it refused, for the officer-facing reason."""
         try:
@@ -386,11 +420,18 @@ class SarvamDocAIExtractor:
         Submits document with schema to Sarvam Doc AI, polls status, and returns
         the structured fields with real AI confidence scores.
         """
+        # Computed on both paths so the feedback loop stays visible without
+        # Sarvam credit — the hints are real even when the fields are fixture.
+        hints, snapshot = self._learning_context()
+        learning = {"hints_applied": sorted(hints.keys()), "stats_snapshot": snapshot}
+
         if not self.api_key or self.api_key.startswith("mock-") or self.api_key == "":
             logger.error("!!! NO SARVAM API KEY — returning BUILT-IN FIXTURE DATA. "
                          "Nothing below came from the uploaded document. "
                          "Create backend/.env with a real SARVAM_API_KEY.")
-            return self._get_calibrated_baseline(file_name)
+            baseline = self._get_calibrated_baseline(file_name)
+            baseline["learning"] = learning
+            return baseline
 
         content_type = self._get_content_type(file_name)
         send_bytes = file_bytes
@@ -438,7 +479,7 @@ class SarvamDocAIExtractor:
                 # 1. Submit Extraction Job with Schema
                 files = {"file": (send_filename, send_bytes, content_type)}
                 data = {
-                    "schema": json.dumps(LAND_RECORD_EXTRACTION_SCHEMA)
+                    "schema": json.dumps(self._schema_with_hints(hints))
                 }
 
                 logger.info(f"Submitting {send_filename} to Sarvam Doc AI extract endpoint...")
@@ -498,7 +539,9 @@ class SarvamDocAIExtractor:
                         retryable=True,
                     )
 
-                return self._map_sarvam_results(extracted_json, file_name)
+                mapped = self._map_sarvam_results(extracted_json, file_name)
+                mapped["learning"] = learning
+                return mapped
 
         except ExtractionError:
             raise

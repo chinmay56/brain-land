@@ -143,6 +143,8 @@ export default function CitizenUploadPage() {
     supporting_documents: string[];
     /** SARVAM_LIVE or DEMO_FALLBACK — recorded on the audit row at submit. */
     data_source: string;
+    /** Fields whose schema description carried a learned hint this run. */
+    learning_hints?: string[];
   }>({
     owner_name: { value: '', confidence: 0.0 },
     co_owners: [],
@@ -292,7 +294,10 @@ export default function CitizenUploadPage() {
           overall_confidence: data.overall_confidence || 0.94,
           validation_flags: flags,
           supporting_documents: [selectedFile.name],
-          data_source: data.data_source || json.data_source || 'UNKNOWN'
+          data_source: data.data_source || json.data_source || 'UNKNOWN',
+          // Which learned hints were in the prompt for this extraction, so the
+          // audit row records what the extractor was told, not just what it read.
+          learning_hints: (data.learning?.hints_applied || []) as string[]
         };
 
         setExtractedData(populated);
@@ -537,7 +542,10 @@ export default function CitizenUploadPage() {
           action: 'OCR_EXTRACTED',
           role: 'CITIZEN',
           performedBy: citizenName,
-          details: `Extracted via ${proposedData.data_source || 'UNKNOWN'}`,
+          details: `Extracted via ${proposedData.data_source || 'UNKNOWN'}`
+            + (((proposedData as any).learning_hints || []).length
+              ? `; learning hints applied: ${(proposedData as any).learning_hints.join(', ')}`
+              : ''),
           changes: buildOcrExtractedData(proposedData),
         });
 
