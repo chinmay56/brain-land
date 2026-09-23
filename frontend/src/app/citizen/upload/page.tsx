@@ -30,6 +30,60 @@ import { LandRecord, FieldConfidence } from '@/types';
 // deployed Render URL; the localhost fallback keeps `npm run dev` working.
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+// Mirrors _build_ocr_extracted_data in backend/app/api/land_records.py. Both
+// write the same row: the browser upsert is what actually lands when the
+// backend is offline, so it has to carry the per-field confidence too or the
+// officer sees one score repeated on every field.
+const CONFIDENCE_FIELDS = [
+  'owner_name', 'survey_number', 'khasra_number', 'khata_number', 'area',
+  'village', 'tehsil', 'district', 'land_classification',
+  'ownership_details', 'mutation_number', 'registration_info',
+] as const;
+
+const LOW_CONFIDENCE_THRESHOLD = 0.70;
+
+type OcrField = { value: string; confidence: number; is_flagged: boolean };
+
+function buildOcrExtractedData(data: any): Record<string, OcrField> {
+  const out: Record<string, OcrField> = {};
+
+  for (const name of CONFIDENCE_FIELDS) {
+    const field = data?.[name];
+    if (!field || typeof field !== 'object') continue;
+
+    // A field the document never carried is left out rather than stored at
+    // 0.0, which would show the officer a red 0% badge on an absent field.
+    const value = field.value;
+    if (value === null || value === undefined || !String(value).trim()) continue;
+
+    const confidence = Number(field.confidence);
+    if (!Number.isFinite(confidence)) continue;
+
+    // The API serialises FieldConfidence with a camelCase alias; accept either.
+    const flagged = field.is_flagged ?? field.isFlagged;
+    out[name] = {
+      value: String(value),
+      confidence,
+      is_flagged: typeof flagged === 'boolean' ? flagged : confidence < LOW_CONFIDENCE_THRESHOLD,
+    };
+  }
+
+  // co_owners is a plain list with no score of its own, so it inherits the
+  // record-level one to keep the map a single shape.
+  const coOwners = data?.co_owners;
+  if (Array.isArray(coOwners) && coOwners.length > 0) {
+    const overall = Number(data?.overall_confidence);
+    const confidence = Number.isFinite(overall) ? overall : 0;
+    out.co_owners = {
+      value: coOwners.map((c: any) => String(c)).join(', '),
+      confidence,
+      is_flagged: confidence < LOW_CONFIDENCE_THRESHOLD,
+    };
+  }
+
+  return out;
+}
+
 export default function CitizenUploadPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -385,6 +439,8 @@ export default function CitizenUploadPage() {
         registration_info: proposedData.registration_info || {},
         status: 'UNDER_VERIFICATION',
         overall_confidence: proposedData.overall_confidence || 0.94,
+        ocr_extracted_data: buildOcrExtractedData(proposedData),
+        validation_flags: proposedData.validation_flags || [],
         created_by: user?.id || null,
         document_url: finalDocUrl || null
       }).select();
