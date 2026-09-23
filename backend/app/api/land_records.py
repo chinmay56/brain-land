@@ -1,11 +1,21 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Any, Dict, List, Optional
 from app.models.schemas import LandRecordResponse, RecordStatus
+from app.core.auth import get_current_user
 
 router = APIRouter(prefix="/land-records", tags=["Land Records"])
 
 # Live records in memory fallback
 MOCK_RECORDS: List[dict] = []
+
+
+def _owner_of(record: dict) -> Optional[str]:
+    """Whoever filed this record, however the key happens to be spelled."""
+    for key in ("created_by", "createdBy", "submitted_by_id", "submittedById"):
+        value = record.get(key)
+        if value:
+            return str(value)
+    return None
 
 # The fields the extractor scores individually. One number for the whole record
 # tells an officer nothing about WHICH field to distrust, so each is kept.
@@ -68,9 +78,15 @@ async def list_land_records(
     district: Optional[str] = None,
     tehsil: Optional[str] = None,
     village: Optional[str] = None,
-    officer_id: Optional[str] = None
+    officer_id: Optional[str] = None,
+    user: Dict[str, Any] = Depends(get_current_user),
 ):
     results = MOCK_RECORDS
+    # A citizen sees their own submissions and nothing else. Filtered here as
+    # well as by RLS, because this process holds a service-role key and would
+    # otherwise return the whole table.
+    if user.get("role") != "OFFICER":
+        results = [r for r in results if _owner_of(r) == user["id"]]
     if status:
         results = [r for r in results if r["status"] == status]
     if district:
@@ -103,15 +119,24 @@ async def list_land_records(
     return results
 
 @router.get("/{record_id}", response_model=LandRecordResponse)
-async def get_land_record(record_id: str):
+async def get_land_record(record_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     record = next((r for r in MOCK_RECORDS if r["id"] == record_id), None)
     if not record:
+        raise HTTPException(status_code=404, detail="Land record not found")
+    # 404 rather than 403 for somebody else's record: whether a given record id
+    # exists is not something a citizen needs to learn by probing.
+    if user.get("role") != "OFFICER" and _owner_of(record) != user["id"]:
         raise HTTPException(status_code=404, detail="Land record not found")
     return record
 
 @router.post("", response_model=LandRecordResponse)
-async def create_land_record(record: LandRecordResponse):
+async def create_land_record(record: LandRecordResponse,
+                             user: Dict[str, Any] = Depends(get_current_user)):
     rec_dict = record.dict()
+    # Ownership comes from the token. Anything the body claimed is discarded,
+    # or a caller could file a record in somebody else's name.
+    rec_dict["created_by"] = user["id"]
+    rec_dict["submitted_by_id"] = user["id"]
     # Auto-assign jurisdiction from document if not assigned
     doc_district = (rec_dict.get("district", {}).get("value") or "Pune").strip()
     doc_tehsil = (rec_dict.get("tehsil", {}).get("value") or "Haveli").strip()
@@ -174,8 +199,7 @@ async def create_land_record(record: LandRecordResponse):
             except ValueError:
                 return None
 
-        raw_user_id = rec_dict.get("created_by") or rec_dict.get("submitted_by_id") or rec_dict.get("createdBy") or rec_dict.get("submittedById")
-        db_payload["created_by"] = clean_uuid(raw_user_id)
+        db_payload["created_by"] = clean_uuid(user["id"])
         supabase_service.insert_land_record_to_db(db_payload)
     except Exception as err:
         print(f"[Supabase] DB insertion notice: {err}")

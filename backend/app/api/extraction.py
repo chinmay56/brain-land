@@ -1,13 +1,19 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from app.services.sarvam_vision import ExtractionError, sarvam_service
 from app.services.validation_engine import validation_engine
 from app.services.reference_check import check_duplicates, check_reference
+from app.core.auth import get_current_user, require_officer
 
 router = APIRouter(prefix="/extraction", tags=["AI Extraction"])
 
 @router.post("/process")
-async def extract_from_document(file: UploadFile = File(...)):
+async def extract_from_document(
+    file: UploadFile = File(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
     file_bytes = await file.read()
     try:
         extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
@@ -54,7 +60,7 @@ async def extract_from_document(file: UploadFile = File(...)):
 
 
 @router.get("/correction-stats")
-async def correction_stats():
+async def correction_stats(officer: Dict[str, Any] = Depends(require_officer)):
     """
     What humans have been correcting, and what the extractor is being told
     about it. Read-only; safe to poll from a dashboard.

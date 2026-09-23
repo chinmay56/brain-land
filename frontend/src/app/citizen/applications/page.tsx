@@ -139,8 +139,10 @@ export default function CitizenApplicationsPage() {
         
         const { data: listData } = await supabase.storage.from('land-record-documents').list(folderPath);
         if (listData && listData.length > 0) {
-          const { data } = supabase.storage.from('land-record-documents').getPublicUrl(`${folderPath}/${listData[0].name}`);
-          setLocalDocUrl(data.publicUrl);
+          const { data } = await supabase.storage
+            .from('land-record-documents')
+            .createSignedUrl(`${folderPath}/${listData[0].name}`, 3600);
+          setLocalDocUrl(data?.signedUrl || null);
         } else {
           setLocalDocUrl(null);
         }

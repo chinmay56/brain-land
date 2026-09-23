@@ -13,6 +13,7 @@ import type {
 } from '@/types/gis';
 import { ACCURACY_STYLE } from '@/components/gis/CadastralMap';
 import type { LonLat } from '@/components/gis/CadastralMap';
+import { apiFetch } from '@/lib/apiFetch';
 
 const CadastralMap = dynamic(() => import('@/components/gis/CadastralMap'), {
   ssr: false,
@@ -110,7 +111,7 @@ export default function OfficerGISPage() {
     if (trace && trace.length >= 3) form.append('trace', JSON.stringify(trace));
     else if (pin) form.append('pin', JSON.stringify(pin));
     const result = await run(() =>
-      fetch(`${API}/api/gis/plot-document?state=Maharashtra`, { method: 'POST', body: form }));
+      apiFetch(`${API}/api/gis/plot-document?state=Maharashtra`, { method: 'POST', body: form }));
     if (result && result.summary.plotted > 0) {
       setTraceMode(false);
       setPinMode(false);
@@ -151,7 +152,7 @@ export default function OfficerGISPage() {
     return run(async () => {
       const s = await fetch(`${API}/api/gis/sample?village=${village}`, { method: 'POST' });
       const { documents } = await s.json();
-      return fetch(`${API}/api/gis/plot`, {
+      return apiFetch(`${API}/api/gis/plot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documents, assemble: true }),
@@ -178,7 +179,7 @@ export default function OfficerGISPage() {
     return run(() => {
       const form = new FormData();
       form.append('file', file);
-      return fetch(`${API}/api/gis/upload?assemble=true`, { method: 'POST', body: form });
+      return apiFetch(`${API}/api/gis/upload?assemble=true`, { method: 'POST', body: form });
     });
   };
 

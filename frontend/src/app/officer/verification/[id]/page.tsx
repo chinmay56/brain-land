@@ -8,7 +8,7 @@ import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
-import { writeAuditLog } from '@/lib/auditLog';
+import { apiFetch } from '@/lib/apiFetch';
 
 const PdfDocumentViewer = dynamic(
   () => import('@/components/common/PdfDocumentViewer').then((mod) => mod.PdfDocumentViewer),
@@ -41,6 +41,25 @@ import {
   History,
   Edit3
 } from 'lucide-react';
+
+// The workspace keys its fields camelCase; the database and the audit trail
+// use snake_case, so corrections line up under one field name on both sides.
+const AUDIT_FIELD_NAMES: Record<string, string> = {
+  ownerName: 'owner_name',
+  coOwners: 'co_owners',
+  surveyNumber: 'survey_number',
+  khasraNumber: 'khasra_number',
+  khataNumber: 'khata_number',
+  area: 'area',
+  landClassification: 'land_classification',
+  village: 'village',
+  tehsil: 'tehsil',
+  districtState: 'district',
+  mutationNumber: 'mutation_number',
+  registrationInfo: 'registration_info',
+};
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export default function OfficerVerificationWorkspacePage() {
   const params = useParams();
@@ -108,9 +127,11 @@ export default function OfficerVerificationWorkspacePage() {
         if (data) {
           setDbRecord(data);
           
-          let pdfUrl = data.document_url || null;
-          let docFileName: string | null = pdfUrl;
-          if (!pdfUrl && (data.application_no || data.id)) {
+          // document_url holds a storage PATH now, not a URL. The bucket is
+          // private, so viewing it means asking for a short-lived signed link.
+          let storagePath: string | null = data.document_url || null;
+          let docFileName: string | null = storagePath;
+          if (!storagePath && (data.application_no || data.id)) {
             try {
               const safeDist = (typeof data.district === 'object' ? data.district?.value : data.district) || 'Pune';
               const safeTeh = (typeof data.tehsil === 'object' ? data.tehsil?.value : data.tehsil) || 'Haveli';
@@ -121,15 +142,22 @@ export default function OfficerVerificationWorkspacePage() {
 
               const { data: listData } = await supabase.storage.from('land-record-documents').list(folderPath);
               if (listData && listData.length > 0) {
-                const { data: pData } = supabase.storage.from('land-record-documents').getPublicUrl(`${folderPath}/${listData[0].name}`);
-                pdfUrl = pData.publicUrl;
+                storagePath = `${folderPath}/${listData[0].name}`;
                 docFileName = listData[0].name;
               }
             } catch (err) {
               console.error('Storage PDF lookup error:', err);
             }
           }
-          setDocUrl(pdfUrl);
+          let signed: string | null = null;
+          if (storagePath) {
+            const { data: signedData, error: signErr } = await supabase
+              .storage.from('land-record-documents')
+              .createSignedUrl(storagePath, 3600);
+            if (signErr) console.warn('Could not sign document:', signErr.message);
+            signed = signedData?.signedUrl || null;
+          }
+          setDocUrl(signed);
           setDocContentType(guessContentType(docFileName));
           setPageRotations({});
           setPdfPageCount(null);
@@ -212,71 +240,53 @@ export default function OfficerVerificationWorkspacePage() {
     }));
   };
 
-  const officerName = user?.name || user?.employeeId || 'Officer';
+  // Certification is decided by the backend: it reads the pre-update values,
+  // writes the record, and records who did it from the bearer token. The
+  // browser no longer writes land_records or audit_logs for approve/reject.
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
-  // The workspace keys its fields camelCase; the audit trail is keyed the way
-  // the database and the citizen rows are, so both sides of a correction line
-  // up under one field name.
-  const AUDIT_FIELD_NAMES: Record<string, string> = {
-    ownerName: 'owner_name',
-    coOwners: 'co_owners',
-    surveyNumber: 'survey_number',
-    khasraNumber: 'khasra_number',
-    khataNumber: 'khata_number',
-    area: 'area',
-    landClassification: 'land_classification',
-    village: 'village',
-    tehsil: 'tehsil',
-    districtState: 'district',
-    mutationNumber: 'mutation_number',
-    registrationInfo: 'registration_info',
-  };
-
-  /** Every field the officer typed over, with what the AI had read there. */
-  const officerEdits = () => {
-    const changes: Record<string, { ai: string; officer: string }> = {};
+  /** Fields the officer typed over, keyed the way the database names them. */
+  const changedFields = () => {
+    const out: Record<string, string> = {};
     Object.entries(fields).forEach(([key, f]) => {
       if (f.ai !== f.officer) {
-        changes[AUDIT_FIELD_NAMES[key] || key] = { ai: f.ai, officer: f.officer };
+        const name = AUDIT_FIELD_NAMES[key] || key;
+        out[name] = name === 'district' ? f.officer.split(',')[0].trim() : f.officer;
       }
     });
-    return changes;
+    return out;
+  };
+
+  const submitDecision = async (action: 'APPROVE' | 'REJECT') => {
+    setDecisionError(null);
+    try {
+      const res = await apiFetch(`${API}/api/verification/process-decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: recordId,
+          officer_id: user?.id || '',
+          action,
+          field_corrections: changedFields(),
+          remarks: action === 'APPROVE' ? officerRemarks : rejectRemarks,
+          reason: action === 'REJECT' ? rejectReason : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as any));
+        setDecisionError(typeof body?.detail === 'string' ? body.detail
+          : `The decision could not be saved (HTTP ${res.status}).`);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      setDecisionError(e instanceof Error ? e.message : 'The decision could not be saved.');
+      return false;
+    }
   };
 
   const handleApprove = async () => {
-    try {
-      const { error } = await supabase
-        .from('land_records')
-        .update({
-          status: 'VERIFIED',
-          officer_remarks: officerRemarks,
-          owner_name: fields.ownerName.officer,
-          survey_number: fields.surveyNumber.officer,
-          village: fields.village.officer,
-          tehsil: fields.tehsil.officer,
-          district: fields.districtState?.officer ? fields.districtState.officer.split(',')[0].trim() : 'जळगाव',
-          registration_info: { value: fields.registrationInfo?.officer, confidence: fields.registrationInfo?.confidence || 0.95 },
-        })
-        .eq('id', recordId);
-
-      if (error) {
-        console.warn('DB update warning:', error);
-      } else {
-        // Only after the record itself is certified — an audit row for a
-        // certification that never landed would be a lie.
-        await writeAuditLog({
-          recordId,
-          action: 'CERTIFIED_APPROVED',
-          role: 'OFFICER',
-          performedBy: officerName,
-          details: officerRemarks,
-          changes: officerEdits(),
-        });
-      }
-    } catch (e) {
-      console.warn('DB update warning:', e);
-    }
-
+    if (!(await submitDecision('APPROVE'))) return;
     setActionSuccess('APPROVED');
     setTimeout(() => {
       setShowApproveModal(false);
@@ -285,31 +295,7 @@ export default function OfficerVerificationWorkspacePage() {
   };
 
   const handleReject = async () => {
-    try {
-      const { error } = await supabase
-        .from('land_records')
-        .update({
-          status: 'REJECTED',
-          officer_remarks: `${rejectReason}: ${rejectRemarks}`,
-        })
-        .eq('id', recordId);
-
-      if (error) {
-        console.warn('DB update warning:', error);
-      } else {
-        await writeAuditLog({
-          recordId,
-          action: 'REJECTED',
-          role: 'OFFICER',
-          performedBy: officerName,
-          details: `${rejectReason}: ${rejectRemarks}`,
-          changes: officerEdits(),
-        });
-      }
-    } catch (e) {
-      console.warn('DB update warning:', e);
-    }
-
+    if (!(await submitDecision('REJECT'))) return;
     setActionSuccess('REJECTED');
     setTimeout(() => {
       setShowRejectModal(false);

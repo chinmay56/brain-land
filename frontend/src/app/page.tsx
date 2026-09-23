@@ -25,7 +25,6 @@ import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 
 export default function LandingPage() {
   const router = useRouter();
-  const { loginCitizen, loginOfficer, switchRole } = useAuth();
   const [selectedDocType, setSelectedDocType] = useState<'712' | 'khasra' | 'mutation'>('712');
 
   // Automatic Smooth Carousel Auto-play Interval (3.5s)
@@ -332,7 +331,6 @@ export default function LandingPage() {
               <div className="grid grid-cols-2 gap-2.5">
                 <Link
                   href="/login"
-                  onClick={() => switchRole('CITIZEN')}
                   className="w-full text-center bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-stone-sm"
                 >
                   <span>Citizen Login</span>
@@ -340,22 +338,17 @@ export default function LandingPage() {
                 </Link>
                 <Link
                   href="/register"
-                  onClick={() => switchRole('CITIZEN')}
                   className="w-full text-center bg-white hover:bg-stone-50 text-stone-900 border border-[#D7D4CA] text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors shadow-stone-sm"
                 >
                   Register
                 </Link>
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  await loginCitizen('ramesh.patil@gmail.com', 'password123');
-                  router.push('/citizen/dashboard');
-                }}
+              <Link
+                href="/login"
                 className="w-full text-center block text-xs text-terracotta-700 font-semibold hover:underline cursor-pointer"
               >
-                Explore Citizen Dashboard Demo →
-              </button>
+                Sign in to your land records →
+              </Link>
             </div>
           </div>
 
@@ -396,23 +389,18 @@ export default function LandingPage() {
             <div className="pt-6 space-y-2.5">
               <Link
                 href="/officer-login"
-                onClick={() => switchRole('OFFICER')}
                 className="w-full text-center bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-stone-sm transition-all flex items-center justify-center gap-2"
               >
                 <ShieldCheck className="w-4 h-4 text-terracotta-400" />
                 <span>Officer Sign In</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
-              <button
-                type="button"
-                onClick={async () => {
-                  await loginOfficer('REV-MH-PN-4091', 'admin@revenue2026', '8912', 'Pune', 'Haveli', 'Sub-Divisional Revenue Officer (SDO)');
-                  router.push('/officer/dashboard');
-                }}
+              <Link
+                href="/officer-login"
                 className="w-full text-center block text-xs text-stone-800 font-semibold hover:underline cursor-pointer"
               >
-                Explore Officer Verification Workspace Demo →
-              </button>
+                Officer sign in →
+              </Link>
             </div>
           </div>
         </div>

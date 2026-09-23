@@ -7,6 +7,7 @@ import { LandRecord } from '@/types';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import { supabase } from '@/lib/supabaseClient';
+import { apiFetch } from '@/lib/apiFetch';
 import { 
   ShieldCheck, 
   AlertTriangle, 
@@ -148,7 +149,7 @@ export default function OfficerDashboardPage() {
     if (activeTab !== 'analytics' && activeTab !== 'geo') return;
     let cancelled = false;
     const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-    fetch(`${api}/api/extraction/correction-stats`)
+    apiFetch(`${api}/api/extraction/correction-stats`)
       .then((r) => r.json())
       .then((j) => { if (!cancelled) setLearningStats(j); })
       .catch((e) => console.warn('Correction stats unavailable:', e));

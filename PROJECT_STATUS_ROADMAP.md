@@ -38,6 +38,7 @@
 - **FastAPI Core**: Pydantic models configured with camelCase alias generation for seamless Next.js frontend binding.
 - **Validation Engine**: Business rules engine detecting anomalies (missing survey numbers, low confidence scores, area unit mismatches).
 - **Cross-Database Verification & Duplicate Detection**: Every extraction is checked against the `public.reference_records` RoR master (owner and area discrepancies raised as `REF_OWNER_MISMATCH` / `REF_AREA_MISMATCH`, banded 5–15% warning vs >15% conflict) and against already-submitted records for the same village and survey number (`DUPLICATE_RECORD`, escalated to a competing claim when the owner differs), both degrading to a bundled JSON master and no flags when Supabase is unreachable.
+- **Role-Based Access Control & Private Storage**: Every protected endpoint resolves the caller from a Supabase bearer token and reads the authoritative role from `public.profiles`, so officer-only actions (certification, the GIS editor, correction statistics) return 403 to a citizen and 401 to an anonymous caller; row-level security no longer grants anything to `anon`, signup can no longer award itself the OFFICER role, certification is decided server-side with the officer taken from the token, and land documents live in a private bucket served through expiring signed URLs instead of public links.
 - **Supabase PostgreSQL & Storage**: Configured for storing document assets and land record data.
 
 ---
@@ -55,10 +56,9 @@
 
 | Feature / Requirement | Description | Target Component |
 | :--- | :--- | :--- |
-| **1. Direct Supabase Real-time Sync** | Connect citizen submission directly to Officer Queue DB table so submissions appear live instantly without page reload. | Backend API & Supabase Realtime |
-| **2. Multi-Document Conflict Resolver** | UI card highlighting discrepancies (e.g., Area mismatch between 7/12 Extract vs. Sale Deed) for officer review. | Frontend Officer Verification UI |
-| **3. PostGIS Spatial Parcel Linking** | Query PostGIS spatial database using `survey_number` to highlight the exact land parcel on the GIS map. | Backend PostGIS + Leaflet GIS |
-| **4. Digitized Certificate PDF Export** | Export official government-branded "Verified Land Record Certificate" (PDF download) upon approval. | Frontend Citizen / Officer Dashboard |
+| **1. Multi-Document Conflict Resolver** | UI card highlighting discrepancies (e.g., Area mismatch between 7/12 Extract vs. Sale Deed) for officer review. | Frontend Officer Verification UI |
+| **2. PostGIS Spatial Parcel Linking** | Query PostGIS spatial database using `survey_number` to highlight the exact land parcel on the GIS map. | Backend PostGIS + Leaflet GIS |
+| **3. Digitized Certificate PDF Export** | Export official government-branded "Verified Land Record Certificate" (PDF download) upon approval. | Frontend Citizen / Officer Dashboard |
 
 ---
 

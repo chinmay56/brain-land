@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import { writeAuditLog } from '@/lib/auditLog';
+import { apiFetch } from '@/lib/apiFetch';
 import { MOCK_RECORDS } from '@/data/mockData';
 import { 
   UploadCloud, 
@@ -265,7 +266,7 @@ export default function CitizenUploadPage() {
 
       setProcessingStatus('Passing Universal 12-Field Schema with strict disambiguation rules...');
       
-      const res = await fetch(`${API}/api/extraction/process`, {
+      const res = await apiFetch(`${API}/api/extraction/process`, {
         method: 'POST',
         body: formData,
       });
@@ -368,7 +369,7 @@ export default function CitizenUploadPage() {
         const formData = new FormData();
         formData.append('file', supportingFile);
 
-        const res = await fetch(`${API}/api/extraction/process`, {
+        const res = await apiFetch(`${API}/api/extraction/process`, {
           method: 'POST',
           body: formData,
         });
@@ -452,7 +453,7 @@ export default function CitizenUploadPage() {
       documentPages: 2,
       supportingDocuments: proposedData.supporting_documents,
       submittedBy: user?.name || 'Citizen',
-      submittedById: user?.id || 'usr_cit_001',
+      submittedById: user?.id || '',
       documentUrl: filePreviewUrl || undefined,
       data_source: proposedData.data_source || 'UNKNOWN'
     } as any;
@@ -485,18 +486,19 @@ export default function CitizenUploadPage() {
 
       if (selectedFile) {
         try {
-          const storagePath = `${user?.id || 'usr_cit_001'}/${safeDistrict}/${safeTehsil}/${newRecord.applicationNo}/${safeFileName}`;
+          // Folder named for the uploader: the storage policy checks exactly
+          // this, so a fallback id would put the file where nobody can read it.
+          const storagePath = `${user?.id}/${safeDistrict}/${safeTehsil}/${newRecord.applicationNo}/${safeFileName}`;
           const { data: uploadData } = await supabase.storage.from('land-record-documents').upload(storagePath, selectedFile, {
             cacheControl: '3600',
             upsert: true
           });
           if (uploadData) {
-            const { data: pubData } = supabase.storage.from('land-record-documents').getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              finalDocUrl = pubData.publicUrl;
-              newRecord.documentUrl = pubData.publicUrl;
-              (newRecord as any).document_url = pubData.publicUrl;
-            }
+            // Store the path. The bucket is private, so a URL would expire and
+            // a permanent one would defeat the point of making it private.
+            finalDocUrl = storagePath;
+            newRecord.documentUrl = storagePath;
+            (newRecord as any).document_url = storagePath;
           }
         } catch (stErr) {
           console.warn('Supabase storage upload notice:', stErr);
@@ -581,7 +583,7 @@ export default function CitizenUploadPage() {
 
     // Sync to FastAPI backend if available
     try {
-      await fetch(`${API}/api/land-records`, {
+      await apiFetch(`${API}/api/land-records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecord),

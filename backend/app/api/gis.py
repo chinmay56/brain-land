@@ -15,6 +15,9 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi import Depends
+
+from app.core.auth import require_officer
 from pydantic import BaseModel, Field
 
 from app.services import crs_india as crs
@@ -370,7 +373,8 @@ def _closed(ring):
 
 
 @router.post("/plot", summary="Plot parcels from extracted land documents")
-async def plot(request: PlotRequest) -> Dict[str, Any]:
+async def plot(request: PlotRequest,
+               officer: Dict[str, Any] = Depends(require_officer)) -> Dict[str, Any]:
     """
     The main entry point. Give it extracted documents, get GeoJSON back.
 
@@ -392,6 +396,7 @@ async def upload(
                                              '{"documents": [...]}'),
     assemble: bool = Query(True),
     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+    officer: Dict[str, Any] = Depends(require_officer),
 ) -> Dict[str, Any]:
     """
     File-upload flavour, so the front end can offer a drop zone while the OCR
@@ -428,7 +433,8 @@ async def upload(
 
 @router.post("/parcel", summary="Geometry for one document, in full detail")
 async def one_parcel(document: DocumentIn,
-                     area_tolerance_pct: float = Query(2.0, gt=0, le=50)
+                     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+                     officer: Dict[str, Any] = Depends(require_officer),
                      ) -> Dict[str, Any]:
     """Everything the engine derived from a single document, including the local
     ring, the closure report and every flag — useful for debugging an extraction."""
@@ -499,6 +505,7 @@ async def plot_document(
                           'can still be shown on the map as an approximate location. '
                           'Ignored if `trace` is also supplied.'),
     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+    officer: Dict[str, Any] = Depends(require_officer),
 ) -> Dict[str, Any]:
     """
     The end-to-end path. Runs the real extraction stage on an uploaded scan,

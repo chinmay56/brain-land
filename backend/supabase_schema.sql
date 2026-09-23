@@ -23,7 +23,7 @@ BEGIN
     INSERT INTO public.profiles (id, role, full_name, phone_number, designation, employee_id, district, tehsil)
     VALUES (
         new.id,
-        COALESCE(new.raw_user_meta_data->>'role', 'CITIZEN'),
+        'CITIZEN',   -- never from raw_user_meta_data: the caller controls that
         COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
         new.raw_user_meta_data->>'phone_number',
         new.raw_user_meta_data->>'designation',
@@ -32,10 +32,7 @@ BEGIN
         new.raw_user_meta_data->>'tehsil'
     )
     ON CONFLICT (id) DO UPDATE SET
-        role = EXCLUDED.role,
-        full_name = EXCLUDED.full_name,
-        district = EXCLUDED.district,
-        tehsil = EXCLUDED.tehsil;
+        full_name = EXCLUDED.full_name;   -- never role
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -127,61 +124,87 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.land_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
 
--- 5. Row-Level Security Policies:
-CREATE POLICY "Citizens view own records, Officers view all" 
-ON public.land_records FOR SELECT 
+-- 5. Row-Level Security Policies
+-- No policy below grants anything to `anon`. An unauthenticated caller can
+-- read nothing. See migrations/001_rbac_and_secure_storage.sql for the
+-- re-runnable version of this section.
+
+-- SECURITY DEFINER so that a policy on profiles can ask about profiles without
+-- recursing through its own RLS.
+CREATE OR REPLACE FUNCTION public.is_officer()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid() AND role = 'OFFICER'
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_officer() FROM public;
+GRANT EXECUTE ON FUNCTION public.is_officer() TO authenticated, anon, service_role;
+
+CREATE POLICY "Users read own profile, officers read all"
+ON public.profiles FOR SELECT
+USING (id = auth.uid() OR public.is_officer());
+
+CREATE POLICY "Users update own profile"
+ON public.profiles FOR UPDATE
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
+
+CREATE POLICY "Citizens view own records, Officers view all"
+ON public.land_records FOR SELECT
+USING (created_by = auth.uid() OR public.is_officer());
+
+CREATE POLICY "Citizens can insert their own records"
+ON public.land_records FOR INSERT
+WITH CHECK (created_by = auth.uid());
+
+CREATE POLICY "Officers can update verification status & remarks"
+ON public.land_records FOR UPDATE
+USING (public.is_officer())
+WITH CHECK (public.is_officer());
+
+CREATE POLICY "Officers read all audit logs, citizens read their own"
+ON public.audit_logs FOR SELECT
 USING (
-    auth.uid() = created_by 
+    public.is_officer()
     OR EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND role = 'OFFICER'
+        SELECT 1 FROM public.land_records lr
+        WHERE lr.id = audit_logs.record_id AND lr.created_by = auth.uid()
     )
-    OR auth.role() = 'anon' -- Development fallback
 );
 
-CREATE POLICY "Citizens can insert their own records" 
-ON public.land_records FOR INSERT 
-WITH CHECK (
-    auth.uid() = created_by 
-    OR auth.role() = 'anon'
-);
+CREATE POLICY "Authenticated users append audit logs"
+ON public.audit_logs FOR INSERT
+WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Officers can update verification status & remarks" 
-ON public.land_records FOR UPDATE 
-USING (
-    EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND role = 'OFFICER'
-    )
-    OR auth.role() = 'anon'
-);
-
-CREATE POLICY "Public read audit logs for verification" 
-ON public.audit_logs FOR SELECT USING (true);
-
-CREATE POLICY "Allow system insert audit logs" 
-ON public.audit_logs FOR INSERT WITH CHECK (true);
-
--- The reference master is read-only to the application: it is maintained by the
--- department, never written by a citizen submission or an officer action.
-CREATE POLICY "Anyone may read the reference master"
+CREATE POLICY "Authenticated users read the reference master"
 ON public.reference_records FOR SELECT
-USING (auth.role() = 'authenticated' OR auth.role() = 'anon');
+USING (auth.role() = 'authenticated');
 
--- 6. Storage Bucket RLS Policies (Strict User Document Isolation)
--- Users can only upload and read files in their own folder: land-record-documents/{user_id}/*
+-- 6. Storage Bucket RLS (Strict User Document Isolation)
+-- The bucket is private; documents are served through short-lived signed URLs.
 CREATE POLICY "Users access own document folder, Officers access all"
 ON storage.objects FOR ALL
 USING (
-    bucket_id = 'land-record-documents' 
+    bucket_id = 'land-record-documents'
     AND (
         (storage.foldername(name))[1] = auth.uid()::text
-        OR EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND role = 'OFFICER'
-        )
-        OR auth.role() = 'anon'
+        OR public.is_officer()
+    )
+)
+WITH CHECK (
+    bucket_id = 'land-record-documents'
+    AND (
+        (storage.foldername(name))[1] = auth.uid()::text
+        OR public.is_officer()
     )
 );
 

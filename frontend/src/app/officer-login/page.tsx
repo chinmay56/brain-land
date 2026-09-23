@@ -19,6 +19,7 @@ export default function OfficerLoginPage() {
   const [tehsil, setTehsil] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [dbDistricts, setDbDistricts] = useState<string[]>([]);
   const [dbTehsilsMap, setDbTehsilsMap] = useState<Record<string, string[]>>({});
 
@@ -67,14 +68,16 @@ export default function OfficerLoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
-      await loginOfficer(
-        email || 'officer.jalgaon@revenue.gov.in',
-        password || 'admin@jalgaon2026',
-        district,
-        tehsil,
-        designation
-      );
+      // District, tehsil and designation are not credentials — they are read
+      // from the officer's profile after sign-in. Sending them from the form
+      // only ever fed the mock.
+      const result = await loginOfficer(email, password);
+      if (!result.success) {
+        setError(result.error || 'Sign-in failed.');
+        return;
+      }
       router.push('/officer/dashboard');
     } finally {
       setLoading(false);
@@ -115,72 +118,7 @@ export default function OfficerLoginPage() {
               />
             </div>
 
-            {/* 2. Designation / Cadre */}
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-stone-700">
-                Designation / Cadre
-              </label>
-              <select
-                value={designation}
-                onChange={(e) => setDesignation(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
-              >
-                <option value="Sub-Divisional Revenue Officer (SDO)">Sub-Divisional Revenue Officer (SDO)</option>
-                <option value="Tehsildar / Executive Magistrate">Tehsildar / Executive Magistrate</option>
-                <option value="Naib Tehsildar (Land Records)">Naib Tehsildar (Land Records)</option>
-                <option value="Revenue Inspector (Kanungo)">Revenue Inspector (Kanungo)</option>
-              </select>
-            </div>
-
-            {/* 3. Assigned Jurisdiction Selectors */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-stone-700">
-                  Assigned District
-                </label>
-                <select
-                  value={district}
-                  onChange={(e) => {
-                    const newDistName = e.target.value;
-                    setDistrict(newDistName);
-                    const list = dbTehsilsMap[newDistName] || [];
-                    if (list.length > 0) {
-                      setTehsil(list[0]);
-                    } else {
-                      setTehsil('');
-                    }
-                  }}
-                  className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
-                >
-                  <option value="" disabled>-- Select District --</option>
-                  {(dbDistricts.length > 0 ? dbDistricts : LGD_MAHARASHTRA_DISTRICTS.map(d => d.en)).map((distName) => (
-                    <option key={distName} value={distName}>
-                      {distName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-stone-700">
-                  Assigned Tehsil
-                </label>
-                <select
-                  value={tehsil}
-                  onChange={(e) => setTehsil(e.target.value)}
-                  className="w-full px-2.5 py-2 text-xs border border-[#D7D4CA] rounded-lg bg-white text-stone-900 font-medium"
-                >
-                  <option value="" disabled>-- Select Tehsil --</option>
-                  {availableTehsils.map((tName) => (
-                    <option key={tName} value={tName}>
-                      {tName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* 4. Password */}
+            {/* 2. Password */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-stone-700">
                 Password
@@ -194,6 +132,12 @@ export default function OfficerLoginPage() {
                 required
               />
             </div>
+
+            {error && (
+              <div className="px-3 py-2 rounded-lg bg-rose-50 border border-rose-300 text-rose-900 text-xs font-semibold">
+                {error}
+              </div>
+            )}
 
             <button
               type="submit"

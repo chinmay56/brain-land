@@ -45,7 +45,7 @@ export default function CitizenLoginPage() {
     setErrorMessage('');
     setLoading(true);
     try {
-      const res = await loginCitizen(identifier.trim(), passwordOrOtp.trim() || 'password123');
+      const res = await loginCitizen(identifier.trim(), passwordOrOtp);
       if (!res.success) {
         setErrorMessage(res.error || 'Invalid credentials or user not found');
       } else {

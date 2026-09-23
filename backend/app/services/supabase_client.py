@@ -37,7 +37,10 @@ class SupabaseService:
         """
         Uploads document file bytes to user-isolated Supabase Storage Bucket:
         Path format: {user_id}/{district}/{tehsil}/{application_no}/{file_name}
-        Returns the public/signed URL of the uploaded document.
+
+        Returns the storage PATH, not a URL. The bucket is private, so a URL
+        is only valid for as long as it is signed for; callers ask for one at
+        read time via get_signed_url.
         """
         clean_user = (user_id or "anonymous").strip()
         clean_district = (district or "Pune").strip().replace(" ", "_")
@@ -51,7 +54,8 @@ class SupabaseService:
         try:
             # Create bucket if it doesn't exist
             try:
-                self.client.storage.create_bucket(self.bucket_name, options={"public": True})
+                # Private: a land document must not be fetchable by URL alone.
+                self.client.storage.create_bucket(self.bucket_name, options={"public": False})
             except Exception:
                 pass # Bucket already exists
 
@@ -62,13 +66,27 @@ class SupabaseService:
                 file_options={"content-type": content_type, "upsert": "true"}
             )
             
-            # Get Public URL for document preview
-            public_url = self.client.storage.from_(self.bucket_name).get_public_url(storage_path)
-            logger.info(f"Successfully uploaded {file_name} to Supabase Storage: {public_url}")
-            return public_url
+            logger.info(f"Successfully uploaded {file_name} to Supabase Storage at {storage_path}")
+            return storage_path
         except Exception as e:
+            # No fabricated URL on failure. The previous fallback returned a
+            # hardcoded public link to a project this code may not even be
+            # talking to, which read as success to every caller.
             logger.error(f"Error uploading {file_name} to Supabase storage: {e}")
-            return f"https://fkrsaryjeybgwnazqkum.supabase.co/storage/v1/object/public/{self.bucket_name}/{storage_path}"
+            return None
+
+    def get_signed_url(self, storage_path: str, expires: int = 3600) -> Optional[str]:
+        """A time-limited URL for one private object, or None."""
+        if not self.client or not storage_path:
+            return None
+        try:
+            res = self.client.storage.from_(self.bucket_name).create_signed_url(storage_path, expires)
+            if isinstance(res, dict):
+                return res.get("signedURL") or res.get("signed_url") or res.get("signedUrl")
+            return getattr(res, "signed_url", None)
+        except Exception as e:
+            logger.error(f"Could not sign {storage_path}: {e}")
+            return None
 
     def insert_land_record_to_db(self, record_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
