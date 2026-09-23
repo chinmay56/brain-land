@@ -63,6 +63,12 @@ CREATE TABLE IF NOT EXISTS public.land_records (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Columns the application writes that are not in the original table
+-- definition. Kept as ALTERs so this file stays safe to re-run.
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS data_source TEXT;
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS lgd_district_code TEXT;
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS lgd_tehsil_code TEXT;
+
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id TEXT NOT NULL REFERENCES public.land_records(id) ON DELETE CASCADE,
