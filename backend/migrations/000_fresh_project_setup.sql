@@ -1,9 +1,22 @@
 -- ==============================================================================
--- DEPARTMENT OF LAND RESOURCES (DoLR) - DATABASE SCHEMA
--- Smart India Hackathon 2026 • Problem Statement 26018
+-- FRESH PROJECT SETUP - run this ONCE in the Supabase SQL editor
+-- Smart India Hackathon 2026 - Problem Statement 26018
+--
+-- Use this on a brand new Supabase project. It creates every table, the signup
+-- trigger, row-level security, the private document bucket and the reference
+-- master, in the right order.
+--
+-- Idempotent: policies are dropped before they are created and every table
+-- uses IF NOT EXISTS, so running it twice is harmless.
+--
+-- WHAT IT DELIBERATELY DOES NOT DO
+-- No policy grants anything to `anon`, and signup cannot award the OFFICER
+-- role. So AFTER RUNNING THIS, NOBODY CAN SIGN IN until the two demo accounts
+-- exist. Section 8 at the bottom says how.
 -- ==============================================================================
 
--- 1. Profiles Table (Users: Citizens, Revenue Officers & Admins)
+
+-- ------------------------------------------------------------------ 1. Tables
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     role VARCHAR(20) NOT NULL CHECK (role IN ('CITIZEN', 'OFFICER', 'ADMIN')),
@@ -16,35 +29,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Automatic Profile Creation Trigger on Supabase Auth User Signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, role, full_name, phone_number, designation, employee_id, district, tehsil)
-    VALUES (
-        new.id,
-        'CITIZEN',   -- never from raw_user_meta_data: the caller controls that
-        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
-        new.raw_user_meta_data->>'phone_number',
-        new.raw_user_meta_data->>'designation',
-        new.raw_user_meta_data->>'employeeId',
-        new.raw_user_meta_data->>'district',
-        new.raw_user_meta_data->>'tehsil'
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        full_name = EXCLUDED.full_name;   -- never role
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
-
-
--- 2. Land Records Table (Supporting all 12 SIH Fields)
 CREATE TABLE IF NOT EXISTS public.land_records (
     id TEXT PRIMARY KEY,
     application_no TEXT,
@@ -79,7 +63,6 @@ CREATE TABLE IF NOT EXISTS public.land_records (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Immutable Audit Logs Table
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id TEXT NOT NULL REFERENCES public.land_records(id) ON DELETE CASCADE,
@@ -91,14 +74,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Provenance of the field values on a record: SARVAM_LIVE (read from the
--- document), DEMO_FALLBACK (built-in fixture, no key configured) or MANUAL
--- (typed by the citizen). An officer must be able to see which before certifying.
-ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS data_source TEXT;
-
--- 3b. Reference Master (read-only government RoR extract used for cross-verification)
--- Not a record of applications: this is what the department already holds, and is
--- what an extracted document is checked against for owner and area discrepancies.
 CREATE TABLE IF NOT EXISTS public.reference_records (
     id SERIAL PRIMARY KEY,
     state TEXT NOT NULL,
@@ -119,57 +94,98 @@ CREATE TABLE IF NOT EXISTS public.reference_records (
 CREATE INDEX IF NOT EXISTS reference_records_lookup_idx
     ON public.reference_records (village, survey_number);
 
--- 4. Enable Row Level Security (RLS)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.land_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
 
--- 5. Row-Level Security Policies
--- No policy below grants anything to `anon`. An unauthenticated caller can
--- read nothing. See migrations/001_rbac_and_secure_storage.sql for the
--- re-runnable version of this section.
+-- -------------------------------------------- 2. Signup always yields CITIZEN
+-- raw_user_meta_data is supplied by whoever calls signUp, so a citizen could
+-- otherwise hand themselves role='OFFICER' at registration. Role is not read
+-- from it at all.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $FN$
+BEGIN
+    INSERT INTO public.profiles (id, role, full_name, phone_number, designation, employee_id, district, tehsil)
+    VALUES (
+        new.id,
+        'CITIZEN',
+        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+        new.raw_user_meta_data->>'phone_number',
+        NULL,
+        NULL,
+        new.raw_user_meta_data->>'district',
+        new.raw_user_meta_data->>'tehsil'
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        full_name = EXCLUDED.full_name;   -- never role
+    RETURN NEW;
+END;
+$FN$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- SECURITY DEFINER so that a policy on profiles can ask about profiles without
--- recursing through its own RLS.
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
+-- -------------------------------------------------------- 3. is_officer() helper
+-- SECURITY DEFINER on purpose: a policy on profiles that queries profiles would
+-- recurse. Running as the definer bypasses RLS for this one lookup and breaks
+-- the cycle. search_path is pinned so the function cannot be hijacked.
 CREATE OR REPLACE FUNCTION public.is_officer()
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $FN$
     SELECT EXISTS (
         SELECT 1 FROM public.profiles
         WHERE id = auth.uid() AND role = 'OFFICER'
     );
-$$;
+$FN$;
 
 REVOKE ALL ON FUNCTION public.is_officer() FROM public;
 GRANT EXECUTE ON FUNCTION public.is_officer() TO authenticated, anon, service_role;
 
+
+-- -------------------------------------------------------------- 4. Enable RLS
+ALTER TABLE public.profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.land_records      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
+
+
+-- ----------------------------------------------------------------- 5. Policies
+-- profiles: a user must be able to read their own row or the app cannot tell
+-- who they are. Nobody can write their own role.
+DROP POLICY IF EXISTS "Users read own profile, officers read all" ON public.profiles;
 CREATE POLICY "Users read own profile, officers read all"
 ON public.profiles FOR SELECT
 USING (id = auth.uid() OR public.is_officer());
 
+DROP POLICY IF EXISTS "Users update own profile" ON public.profiles;
 CREATE POLICY "Users update own profile"
 ON public.profiles FOR UPDATE
 USING (id = auth.uid())
 WITH CHECK (id = auth.uid());
 
+-- land_records
+DROP POLICY IF EXISTS "Citizens view own records, Officers view all" ON public.land_records;
 CREATE POLICY "Citizens view own records, Officers view all"
 ON public.land_records FOR SELECT
 USING (created_by = auth.uid() OR public.is_officer());
 
+DROP POLICY IF EXISTS "Citizens can insert their own records" ON public.land_records;
 CREATE POLICY "Citizens can insert their own records"
 ON public.land_records FOR INSERT
 WITH CHECK (created_by = auth.uid());
 
+DROP POLICY IF EXISTS "Officers can update verification status & remarks" ON public.land_records;
 CREATE POLICY "Officers can update verification status & remarks"
 ON public.land_records FOR UPDATE
 USING (public.is_officer())
 WITH CHECK (public.is_officer());
 
+-- audit_logs: a citizen sees the history of their own records only.
+DROP POLICY IF EXISTS "Officers read all audit logs, citizens read their own" ON public.audit_logs;
 CREATE POLICY "Officers read all audit logs, citizens read their own"
 ON public.audit_logs FOR SELECT
 USING (
@@ -180,16 +196,25 @@ USING (
     )
 );
 
+DROP POLICY IF EXISTS "Authenticated users append audit logs" ON public.audit_logs;
 CREATE POLICY "Authenticated users append audit logs"
 ON public.audit_logs FOR INSERT
 WITH CHECK (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users read the reference master" ON public.reference_records;
 CREATE POLICY "Authenticated users read the reference master"
 ON public.reference_records FOR SELECT
 USING (auth.role() = 'authenticated');
 
--- 6. Storage Bucket RLS (Strict User Document Isolation)
--- The bucket is private; documents are served through short-lived signed URLs.
+
+-- -------------------------------------------------- 6. Private document storage
+-- A land document must not be fetchable by URL alone, so the bucket is private
+-- and the app serves expiring signed URLs instead.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('land-record-documents', 'land-record-documents', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
+
+DROP POLICY IF EXISTS "Users access own document folder, Officers access all" ON storage.objects;
 CREATE POLICY "Users access own document folder, Officers access all"
 ON storage.objects FOR ALL
 USING (
@@ -207,34 +232,9 @@ WITH CHECK (
     )
 );
 
--- 6. Insert Mock Records for Immediate Demo
-INSERT INTO public.land_records (
-    id, application_no, document_type, state, district, tehsil, village, 
-    survey_number, khasra_number, khata_number, owner_name, co_owners, area, area_unit, 
-    mutation_number, land_classification, status, overall_confidence, officer_remarks, assigned_officer
-) VALUES 
-(
-    'LR-2026-1021', 'APP-MH-2026-00481', '7/12 Extract', 'Maharashtra', 'Pune', 'Haveli', 'Hadapsar', 
-    '124/2', 'K-4821', 'KH-1024', 'Ramesh Baliram Patil', ARRAY['Suresh Baliram Patil'], 2.4500, 'Hectares', '5821', 
-    'Jirayat (Agricultural Dry)', 'UNDER_VERIFICATION', 94.0, 
-    'Mutation number verified against original RoR volume.', 'SDO Pune Haveli'
-),
-(
-    'LR-2026-1019', 'APP-MH-2026-00465', '7/12 Extract', 'Maharashtra', 'Pune', 'Haveli', 'Kharadi', 
-    '131/2', 'K-9012', 'KH-3140', 'Sunita Devi Deshmukh', ARRAY[]::TEXT[], 3.1200, 'Hectares', '5902', 
-    'Bagayat (Irrigated Garden)', 'VERIFIED', 98.0, 
-    'Certified and verified against cadastral index sheet.', 'Shri Vikramaditya Joshi (SDO Haveli)'
-),
-(
-    'LR-2026-1020', 'APP-MH-2026-00470', 'Mutation Register', 'Maharashtra', 'Pune', 'Haveli', 'Hadapsar', 
-    '112/4-B', 'K-3310', 'KH-0891', 'Ganesh Vitthal Shinde', ARRAY[]::TEXT[], 3.1000, 'Hectares', '5789', 
-    'Jirayat', 'FLAGGED', 62.0, 
-    'Area sum mismatch detected against parent parcel 112.', 'SDO Pune Haveli'
-)
-ON CONFLICT (id) DO NOTHING;
 
--- 7. Reference Master Seed (generated from app/data/hadapsar_records.json,
--- plus the two rows the demo documents are checked against).
+-- --------------------------------------------------- 7. Reference master seed
+-- What the department already holds. Extractions are cross-checked against it.
 INSERT INTO public.reference_records (
     state, district, tehsil, village, survey_number, khasra_number,
     khata_number, owner_name, area, area_unit, land_classification, source
@@ -252,3 +252,37 @@ INSERT INTO public.reference_records (
     ('Maharashtra', 'Jalgaon', 'Jalgaon', 'Mehrun', '486/1', 'Plot No. 23', NULL, 'चंदन रामचंद्र वाणी', 289.25, 'Sq. Meters', NULL, 'RoR master 2024'),
     ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/2', 'K-4821', 'KH-1024', 'Ramesh Baliram Patil', 2.61, 'Hectares', NULL, 'RoR master 2024')
 ON CONFLICT DO NOTHING;
+
+
+-- ==============================================================================
+-- 8. ACCOUNTS - REQUIRED, OR NOBODY CAN SIGN IN
+--
+-- An auth user cannot be created properly in SQL (the Auth service hashes the
+-- password), so create them in the dashboard:
+--
+--   Authentication -> Users -> Add user -> Create new user
+--   Tick "Auto Confirm User" for BOTH, or they cannot sign in.
+--
+--     officer@land.in
+--     citizen@land.in
+--
+-- Then run the promote block below. The citizen needs nothing further - every
+-- signup is a CITIZEN by default, which is the point.
+-- ==============================================================================
+
+UPDATE public.profiles p
+SET role        = 'OFFICER',
+    full_name   = 'Shri Vikramaditya Joshi',
+    designation = 'Sub-Divisional Revenue Officer (SDO)',
+    employee_id = 'REV-MH-PN-4091',
+    district    = 'Pune',
+    tehsil      = 'Haveli'
+FROM auth.users u
+WHERE u.id = p.id
+  AND u.email = 'officer@land.in';
+
+-- Verify. Expect one OFFICER (officer@land.in) and one CITIZEN (citizen@land.in).
+SELECT u.email, p.role, p.full_name, p.district, p.tehsil
+FROM public.profiles p
+JOIN auth.users u ON u.id = p.id
+ORDER BY p.role;
