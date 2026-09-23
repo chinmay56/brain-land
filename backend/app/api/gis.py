@@ -438,6 +438,31 @@ async def one_parcel(document: DocumentIn,
     return result.to_dict()
 
 
+@router.get("/suggest-location", summary="Best-effort map starting point for a village name")
+async def suggest_location(
+    village: str = Query(..., description="Village name as extracted from the document."),
+    tehsil: str = Query("", description="Tehsil / taluka, improves match accuracy."),
+    district: str = Query("", description="District, improves match accuracy."),
+    state: str = Query("Maharashtra"),
+) -> Dict[str, Any]:
+    """
+    Geocodes a village name via OpenStreetMap Nominatim, purely so the map can
+    open zoomed to roughly the right place instead of a blank view of India.
+
+    This is NOT a cadastral centroid and is never fed into the geometry
+    pipeline — `found: false` is a completely normal answer (an unmatched or
+    misspelt village name, or no network) and the officer traces or pins the
+    parcel exactly as before. See village_locator.py for why this exists
+    separately from the surveyed/reconstructed geometry in document_geometry.py.
+    """
+    from app.services.village_locator import suggest_location as geocode
+
+    hit = await geocode(village, tehsil, district, state)
+    if hit is None:
+        return {"found": False}
+    return {"found": True, **hit}
+
+
 @router.post("/sample", summary="A worked example you can plot immediately")
 async def sample(village: Literal["grid", "irregular"] = "grid") -> Dict[str, Any]:
     """
@@ -570,18 +595,36 @@ async def plot_document(
         "fields": {
             key: {"value": _plain(value), "confidence": _conf(value)}
             for key, value in extracted.items()
+            # Geometry is nested structure, not a text field — stringifying it
+            # into the fields panel would print a dict at the officer.
             if key not in ("overall_confidence", "document_pages", "data_source",
-                           "co_owners", "boundaries")
+                           "co_owners", "boundaries", "chain_offset", "traverse")
         },
         "co_owners": extracted.get("co_owners") or [],
         "boundaries": document.get("boundaries", {}),
+        "geometry_source": _geometry_summary(extracted),
         "overall_confidence": extracted.get("overall_confidence"),
         "pages": extracted.get("document_pages"),
     }
     result["adapter_notes"] = notes
     result["needs_position"] = result["summary"]["plotted"] == 0
+
+    # A tippan that only lacks an anchor is a completely different situation
+    # from a 7/12 that has no measurements at all, and the officer is asked to
+    # do a different thing in each case: one pin places an exact boundary,
+    # whereas a shapeless record needs its corners traced by hand.
+    has_shape = any(u.get("accuracy_class") == "reconstructed_floating"
+                    for u in result["unplaced"])
+    result["has_reconstructed_shape"] = has_shape
+
     if result["summary"]["plotted"]:
         result["next_step"] = None
+    elif has_shape:
+        result["next_step"] = (
+            "The measurements on this document give its exact shape and area — only "
+            "its position on the ground is missing. Drop a single pin on the parcel "
+            "and the boundary will be placed there."
+        )
     elif pin_point:
         # The pin didn't anchor anything because there was no reconstructed
         # shape to place — most 7/12s. Hand it back anyway so the map can show
@@ -600,6 +643,32 @@ async def plot_document(
             "position, then POST again with `trace` or `pin`."
         )
     return result
+
+
+def _geometry_summary(extracted: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    What measurements, if any, the extraction found — so the officer can see at
+    a glance whether this document carried a real boundary or only text.
+    """
+    ladder = extracted.get("chain_offset")
+    if isinstance(ladder, dict):
+        return {
+            "kind": "chain_offset",
+            "label": "Tippan ladder (chain & offset)",
+            "detail": (f"{len(ladder.get('offsets') or [])} offsets along a "
+                       f"{ladder.get('base_length')} {ladder.get('unit', 'links')} base line"
+                       + ("" if ladder.get("base_bearing") is None
+                          else f", bearing {ladder['base_bearing']}°")),
+        }
+    traverse = extracted.get("traverse")
+    if isinstance(traverse, dict):
+        return {
+            "kind": "traverse",
+            "label": "Traverse (bearings & distances)",
+            "detail": (f"{len(traverse.get('legs') or [])} legs in "
+                       f"{traverse.get('distance_unit', 'm')}"),
+        }
+    return None
 
 
 def _plain(field: Any) -> Optional[str]:

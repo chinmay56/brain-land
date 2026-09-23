@@ -126,9 +126,207 @@ LAND_RECORD_EXTRACTION_SCHEMA = {
                 "Deed registration summary ONLY: Deed Registration No, SRO Office Name, and Execution Date. "
                 "STRICT EXCLUSION: Do NOT include seller names, buyer names, witness names, or plot boundaries. Return null if absent or uncertain."
             )
+        },
+        # ------------------------------------------------------------------
+        # Geometry. A 7/12 or sale deed has none of this and must return null
+        # for both — these are read off a TIPPAN (Maharashtra, Karnataka) or an
+        # FMB / Field Measurement Book (Tamil Nadu, Telangana, AP), which is a
+        # separate measurement sheet drawn as a sketch with numbers on it.
+        # These two properties are the ONLY route to a real parcel boundary:
+        # every other field on this schema is text. Shapes are rebuilt from
+        # them by survey_math.py, so a transcription error here becomes a
+        # misshapen parcel — accuracy matters more than completeness, and a
+        # null is always better than a guess.
+        # ------------------------------------------------------------------
+        "chain_offset": {
+            "type": "object",
+            "description": (
+                "TIPPAN / FMB LADDER MEASUREMENTS. The classic Indian cadastral survey method, drawn as a long "
+                "base line ('साखळी रेषा' / chain line) straight across the field with short perpendicular ticks "
+                "('ओळंबा' / offsets) out to each boundary corner. Numbers are usually written alongside the sketch "
+                "in two columns or as pairs. Extract ONLY if the document is a tippan/FMB sketch carrying such "
+                "measurements. Return null for a 7/12 extract, sale deed, mutation entry or khatauni — those carry "
+                "no measurements and a guess here produces a fake parcel boundary."
+            ),
+            "properties": {
+                "base_length": {
+                    "type": "number",
+                    "description": "Total length of the main base/chain line, as a plain number without its unit (e.g. 656.17). Usually the largest single measurement on the sheet. Return null if absent."
+                },
+                "unit": {
+                    "type": "string",
+                    "description": "Unit the measurements are written in: 'links', 'chains', 'm', 'ft', or 'karam'. Old sheets are almost always in links or chains. Return null if not stated anywhere on the sheet."
+                },
+                "base_bearing": {
+                    "type": "number",
+                    "description": "True bearing of the base line in decimal degrees from north (0-360), ONLY if the sheet explicitly states one (e.g. a north arrow with a stated angle). Return null if the sheet shows no bearing — this is common and expected."
+                },
+                "offsets": {
+                    "type": "array",
+                    "description": "Every measured boundary point along the base line, in the order they appear from the start of the line. Include the start and end points of the base line itself (offset 0).",
+                    "items": {
+                        "type": "object",
+                        "description": "One measured boundary point: how far along the base line it sits, and how far out to the side.",
+                        "properties": {
+                            "chainage": {"type": "number", "description": "Distance measured ALONG the base line from its starting station, as a plain number. May be negative if the point sits behind the start of the line."},
+                            "offset": {"type": "number", "description": "Perpendicular distance measured OUT from the base line to the boundary corner, as a plain positive number. Use 0 for a point lying on the line itself."},
+                            "side": {"type": "string", "description": "Which side of the base line the offset goes: 'L' for left, 'R' for right. Tippans mark this as डावी/उजवी or by which side of the drawn line the tick sits. Default to 'L' only if genuinely unmarked."},
+                            "label": {"type": "string", "description": "The corner's letter or name as printed on the sketch (e.g. 'A', 'ब'). Return null if the corners are unlabelled."},
+                            "seq": {"type": "integer", "description": "The corner's printed sequence number, if the sketch numbers its corners. Return null if unnumbered."}
+                        }
+                    }
+                }
+            }
+        },
+        "traverse": {
+            "type": "object",
+            "description": (
+                "TRAVERSE MEASUREMENTS — a boundary described as a walk around the parcel, giving a COMPASS BEARING "
+                "and a DISTANCE for each side in turn. Found in Field Measurement Books, survey field books, and in "
+                "some deed schedules written as 'thence N 45-30-00 E, 120 links'. Extract ONLY if the document "
+                "actually lists bearings with distances. Return null for a 7/12 extract, sale deed or mutation entry."
+            ),
+            "properties": {
+                "legs": {
+                    "type": "array",
+                    "description": "One entry per boundary side, in the order walked around the parcel. A closed parcel needs at least 3.",
+                    "items": {
+                        "type": "object",
+                        "description": "One side of the boundary: the direction it runs and how long it is.",
+                        "properties": {
+                            "bearing": {"type": "string", "description": "The bearing exactly as written, preserving its format: whole-circle ('125-30-00' or '125 30 00') or quadrantal ('N45-30-00-E', 'N 45 30 00 E'). Do NOT convert between formats or to decimal."},
+                            "distance": {"type": "number", "description": "Length of this side as a plain positive number, without its unit."},
+                            "unit": {"type": "string", "description": "Unit for THIS leg if it differs from the sheet default ('links', 'chains', 'm', 'ft', 'karam'). Return null if the sheet uses one unit throughout."},
+                            "from_station": {"type": "string", "description": "Name/letter of the station this leg starts at (e.g. 'A', 'P1'). Return null if unlabelled."},
+                            "to_station": {"type": "string", "description": "Name/letter of the station this leg ends at. Return null if unlabelled."}
+                        }
+                    }
+                },
+                "distance_unit": {
+                    "type": "string",
+                    "description": "The unit used for distances throughout the sheet: 'links', 'chains', 'm', 'ft' or 'karam'. Return null if not stated."
+                },
+                "magnetic_declination_deg": {
+                    "type": "number",
+                    "description": "Magnetic declination in decimal degrees, ONLY if the sheet states the bearings are MAGNETIC and gives a declination to correct them by. Return null otherwise — most sheets give true bearings."
+                }
+            }
         }
     }
 }
+
+def _num(value: Any) -> Optional[float]:
+    """A number from the extractor, or None if it cannot be trusted as one."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        out = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    # NaN and infinity would propagate silently into a plotted polygon.
+    if out != out or out in (float("inf"), float("-inf")):
+        return None
+    return out
+
+
+def _text(value: Any) -> Optional[str]:
+    """A non-empty string, treating the extractor's various spellings of nothing as nothing."""
+    if value is None:
+        return None
+    out = str(value).strip()
+    return None if out.lower() in ("", "null", "none", "n/a", "-") else out
+
+
+def _parse_chain_offset(raw: Any) -> Optional[Dict[str, Any]]:
+    """
+    A tippan ladder from the extractor, or None.
+
+    Deliberately all-or-nothing. A partially read ladder still plots — as a
+    parcel with the wrong corners, which is indistinguishable on screen from a
+    correct one and therefore worse than plotting nothing at all. Anything
+    doubtful returns None and the officer traces or pins the parcel instead.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    base_length = _num(raw.get("base_length"))
+    if base_length is None or base_length <= 0:
+        return None
+
+    offsets: list = []
+    for item in raw.get("offsets") or []:
+        if not isinstance(item, dict):
+            continue
+        chainage = _num(item.get("chainage"))
+        offset = _num(item.get("offset"))
+        if chainage is None or offset is None:
+            continue
+        side = (_text(item.get("side")) or "L").upper()[:1]
+        entry: Dict[str, Any] = {
+            "chainage": chainage,
+            # `side` carries the direction, so the magnitude is always positive.
+            "offset": abs(offset),
+            "side": side if side in ("L", "R") else "L",
+        }
+        label = _text(item.get("label"))
+        if label:
+            entry["label"] = label
+        seq = _num(item.get("seq"))
+        if seq is not None:
+            entry["seq"] = int(seq)
+        offsets.append(entry)
+
+    # Three measured points is the minimum that can enclose an area. Fewer
+    # means the ladder was only partly read.
+    if len(offsets) < 3:
+        return None
+
+    out: Dict[str, Any] = {"base_length": base_length, "offsets": offsets}
+    # Unit is left to the contract default when unstated. A wrong assumption
+    # here shows up as a parcel of the wrong size, which the area written on
+    # the record then contradicts — that reconciliation is the safety net.
+    unit = _text(raw.get("unit"))
+    if unit:
+        out["unit"] = unit
+    bearing = _num(raw.get("base_bearing"))
+    if bearing is not None:
+        out["base_bearing"] = bearing % 360.0
+    return out
+
+
+def _parse_traverse(raw: Any) -> Optional[Dict[str, Any]]:
+    """A bearing-and-distance traverse from the extractor, or None. All-or-nothing, as above."""
+    if not isinstance(raw, dict):
+        return None
+
+    legs: list = []
+    for item in raw.get("legs") or []:
+        if not isinstance(item, dict):
+            continue
+        bearing = _text(item.get("bearing"))
+        distance = _num(item.get("distance"))
+        if not bearing or distance is None or distance <= 0:
+            continue
+        leg: Dict[str, Any] = {"bearing": bearing, "distance": distance}
+        for src, dst in (("unit", "unit"), ("from_station", "from_station"),
+                         ("to_station", "to_station")):
+            val = _text(item.get(src))
+            if val:
+                leg[dst] = val
+        legs.append(leg)
+
+    if len(legs) < 3:
+        return None
+
+    out: Dict[str, Any] = {"legs": legs}
+    unit = _text(raw.get("distance_unit"))
+    if unit:
+        out["distance_unit"] = unit
+    declination = _num(raw.get("magnetic_declination_deg"))
+    if declination is not None:
+        out["magnetic_declination_deg"] = declination
+    return out
+
 
 class SarvamDocAIExtractor:
     """
@@ -292,9 +490,16 @@ class SarvamDocAIExtractor:
             not in ("", "null", "none")
         }
 
+        # Geometry bypasses fc(): it is nested structure, not a string with a
+        # confidence. Either it parsed cleanly or it is absent.
+        chain_offset = _parse_chain_offset(raw_result.get("chain_offset"))
+        traverse = _parse_traverse(raw_result.get("traverse"))
+
         return {
             "data_source": "SARVAM_LIVE",
             "boundaries": boundaries,
+            "chain_offset": chain_offset,
+            "traverse": traverse,
             "owner_name": owner_name,
             "co_owners": co_owners,
             "survey_number": survey_number,
@@ -319,8 +524,50 @@ class SarvamDocAIExtractor:
         High-fidelity realistic DoLR-calibrated baseline matching user document.
         """
         fn_lower = file_name.lower()
+
+        # A tippan / FMB carries measurements, which is the whole point of it —
+        # every other fixture here is a text-only record that cannot be plotted.
+        # Checked first: the generic branch below matches on "pdf" and would
+        # otherwise swallow this. The numbers describe a 40m x 25m plot with a
+        # clipped corner (1000 sq m minus the 25 sq m triangle = 987.5).
+        if any(k in fn_lower for k in ("tippan", "fmb", "measurement")):
+            return {
+                "data_source": "DEMO_FALLBACK",
+                "owner_name": FieldConfidence(value="श्री. चंदन रामचंद्र वाणी", confidence=0.96, source_doc=file_name),
+                "co_owners": [],
+                "survey_number": FieldConfidence(value="486/1", confidence=0.98, source_doc=file_name),
+                "khasra_number": FieldConfidence(value="Plot No. 23", confidence=0.93, source_doc=file_name),
+                "khata_number": FieldConfidence(value="", confidence=0.0, source_doc=file_name),
+                "area": FieldConfidence(value="987.5", confidence=0.95, source_doc=file_name),
+                "area_unit": "Sq. Meters",
+                "village": FieldConfidence(value="मेहरुण (Mehrun)", confidence=0.97, source_doc=file_name),
+                "tehsil": FieldConfidence(value="जळगाव (Jalgaon)", confidence=0.96, source_doc=file_name),
+                "district": FieldConfidence(value="जळगाव (Jalgaon)", confidence=0.98, source_doc=file_name),
+                "state": "Maharashtra",
+                "land_classification": FieldConfidence(value="जिरायत (Agricultural Dry)", confidence=0.92, source_doc=file_name),
+                "ownership_details": FieldConfidence(value="भोगवटादार वर्ग-१", confidence=0.94, source_doc=file_name),
+                "mutation_number": FieldConfidence(value="3594", confidence=0.90, source_doc=file_name),
+                "registration_info": FieldConfidence(value="", confidence=0.0, source_doc=file_name),
+                "boundaries": {"north": "Road", "south": "486/2", "east": "487", "west": "485/3"},
+                "chain_offset": {
+                    "base_length": 40.0,
+                    "unit": "m",
+                    "base_bearing": 90.0,
+                    "offsets": [
+                        {"chainage": 0.0,  "offset": 0.0,  "side": "L", "label": "A", "seq": 1},
+                        {"chainage": 40.0, "offset": 0.0,  "side": "L", "label": "B", "seq": 2},
+                        {"chainage": 40.0, "offset": 20.0, "side": "L", "label": "C", "seq": 3},
+                        {"chainage": 35.0, "offset": 25.0, "side": "L", "label": "D", "seq": 4},
+                        {"chainage": 0.0,  "offset": 25.0, "side": "L", "label": "E", "seq": 5},
+                    ],
+                },
+                "traverse": None,
+                "overall_confidence": 0.95,
+                "document_pages": 1,
+            }
+
         is_deed_or_jalgaon = any(k in fn_lower for k in ["deed", "sale", "new doc", "jalgaon", "demo", "final", "pdf", "doc"])
-        
+
         if is_deed_or_jalgaon:
             return {
                 "data_source": "DEMO_FALLBACK",
