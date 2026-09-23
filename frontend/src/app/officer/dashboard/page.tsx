@@ -126,6 +126,10 @@ export default function OfficerDashboardPage() {
           documentUrl: row.document_url || undefined,
           lgdDistrictCode: row.lgd_district_code || undefined,
           lgdTehsilCode: row.lgd_tehsil_code || undefined,
+          ocrExtractedData:
+            row.ocr_extracted_data && Object.keys(row.ocr_extracted_data).length > 0
+              ? row.ocr_extracted_data
+              : undefined,
         }));
         setRecords(mapped);
       }
@@ -325,7 +329,15 @@ export default function OfficerDashboardPage() {
       if (!matchesSearch) return false;
 
       if (queueFilter === 'URGENT') return rec.overallConfidence < 0.75 || rec.validationFlags.some(f => f.severity === 'CONFLICT');
-      if (queueFilter === 'LOW_CONFIDENCE') return rec.overallConfidence < 0.75;
+      // A record can average well and still hide one badly-read field, which is
+      // exactly the record an officer needs to see. Judge on the worst field
+      // when per-field scores exist; older rows only have the average.
+      if (queueFilter === 'LOW_CONFIDENCE') {
+        if (rec.ocrExtractedData) {
+          return Object.values(rec.ocrExtractedData).some(f => f.confidence < 0.70);
+        }
+        return rec.overallConfidence < 0.75;
+      }
       if (queueFilter === 'CONFLICTS') return rec.validationFlags.some(f => f.severity === 'CONFLICT');
       if (queueFilter === 'VERIFIED') return rec.status === 'VERIFIED';
       return true;

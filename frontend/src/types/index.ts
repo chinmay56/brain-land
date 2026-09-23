@@ -85,4 +85,6 @@ export interface LandRecord {
   supportingDocuments?: string[];
   lgdDistrictCode?: string;
   lgdTehsilCode?: string;
+  /** Per-field extractor confidence. Absent on records saved before it was stored. */
+  ocrExtractedData?: Record<string, { value: string; confidence: number; is_flagged?: boolean }>;
 }

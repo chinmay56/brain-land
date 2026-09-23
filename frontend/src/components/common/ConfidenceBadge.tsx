@@ -29,7 +29,9 @@ export const ConfidenceBadge: React.FC<ConfidenceBadgeProps> = ({
     );
   }
 
-  if (percentage >= 75) {
+  // 70 is the flag line used everywhere else (backend LOW_CONFIDENCE_THRESHOLD,
+  // the officer queue's low-confidence filter), so the badge agrees with them.
+  if (percentage >= 70) {
     return (
       <span className={`inline-flex items-center gap-1 font-mono font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 ${
         size === 'sm' ? 'text-[10.5px]' : 'text-xs'

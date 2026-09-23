@@ -148,19 +148,28 @@ export default function OfficerVerificationWorkspacePage() {
             ? (data.registration_info.value || (Object.keys(data.registration_info).length > 0 ? JSON.stringify(data.registration_info) : 'N/A'))
             : (String(data.registration_info || 'N/A'));
 
+          // Per-field confidence from the extractor. Older records were saved
+          // before this column was populated, so anything missing falls back to
+          // the record-level number and renders exactly as it did before.
+          const ocr = (data.ocr_extracted_data || {}) as Record<string, { confidence?: number }>;
+          const confOf = (key: string, fallback: number) => {
+            const scored = ocr[key]?.confidence;
+            return typeof scored === 'number' ? scored : (data.overall_confidence || fallback);
+          };
+
           setFields({
-            ownerName: { ai: owner, officer: owner, confidence: data.overall_confidence || 0.98 },
-            coOwners: { ai: coOwnersVal, officer: coOwnersVal, confidence: data.overall_confidence || 0.95 },
-            surveyNumber: { ai: survey, officer: survey, confidence: data.overall_confidence || 0.98 },
-            khasraNumber: { ai: khasra, officer: khasra, confidence: data.overall_confidence || 0.95 },
-            khataNumber: { ai: khata, officer: khata, confidence: data.overall_confidence || 0.95 },
-            area: { ai: fullArea, officer: fullArea, confidence: data.overall_confidence || 0.95 },
-            landClassification: { ai: landClass, officer: landClass, confidence: data.overall_confidence || 0.95 },
-            village: { ai: vil, officer: vil, confidence: data.overall_confidence || 0.98 },
-            tehsil: { ai: teh, officer: teh, confidence: data.overall_confidence || 0.98 },
-            districtState: { ai: `${dist}, ${stateVal}`, officer: `${dist}, ${stateVal}`, confidence: data.overall_confidence || 0.98 },
-            mutationNumber: { ai: mutation, officer: mutation, confidence: data.overall_confidence || 0.95 },
-            registrationInfo: { ai: regInfo, officer: regInfo, confidence: data.overall_confidence || 0.95 },
+            ownerName: { ai: owner, officer: owner, confidence: confOf('owner_name', 0.98) },
+            coOwners: { ai: coOwnersVal, officer: coOwnersVal, confidence: confOf('co_owners', 0.95) },
+            surveyNumber: { ai: survey, officer: survey, confidence: confOf('survey_number', 0.98) },
+            khasraNumber: { ai: khasra, officer: khasra, confidence: confOf('khasra_number', 0.95) },
+            khataNumber: { ai: khata, officer: khata, confidence: confOf('khata_number', 0.95) },
+            area: { ai: fullArea, officer: fullArea, confidence: confOf('area', 0.95) },
+            landClassification: { ai: landClass, officer: landClass, confidence: confOf('land_classification', 0.95) },
+            village: { ai: vil, officer: vil, confidence: confOf('village', 0.98) },
+            tehsil: { ai: teh, officer: teh, confidence: confOf('tehsil', 0.98) },
+            districtState: { ai: `${dist}, ${stateVal}`, officer: `${dist}, ${stateVal}`, confidence: confOf('district', 0.98) },
+            mutationNumber: { ai: mutation, officer: mutation, confidence: confOf('mutation_number', 0.95) },
+            registrationInfo: { ai: regInfo, officer: regInfo, confidence: confOf('registration_info', 0.95) },
           });
         }
       } catch (err) {

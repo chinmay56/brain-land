@@ -1,11 +1,65 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from app.models.schemas import LandRecordResponse, RecordStatus
 
 router = APIRouter(prefix="/land-records", tags=["Land Records"])
 
 # Live records in memory fallback
 MOCK_RECORDS: List[dict] = []
+
+# The fields the extractor scores individually. One number for the whole record
+# tells an officer nothing about WHICH field to distrust, so each is kept.
+CONFIDENCE_FIELDS = (
+    "owner_name", "survey_number", "khasra_number", "khata_number", "area",
+    "village", "tehsil", "district", "land_classification",
+    "ownership_details", "mutation_number", "registration_info",
+)
+
+LOW_CONFIDENCE_THRESHOLD = 0.70
+
+
+def _build_ocr_extracted_data(rec: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Per-field confidence, flattened for the ocr_extracted_data JSONB column.
+
+    Fields the document never carried are left out rather than stored with a
+    0.0 score: the extractor reports 0.0 for "not on the page", and writing
+    that down would show the officer a red 0% badge on a field that is simply
+    absent, which reads as a bad extraction instead of an empty column.
+    """
+    out: Dict[str, Any] = {}
+    for name in CONFIDENCE_FIELDS:
+        field = rec.get(name)
+        if not isinstance(field, dict):
+            continue
+        value = field.get("value")
+        if value is None or not str(value).strip():
+            continue
+        try:
+            confidence = float(field.get("confidence"))
+        except (TypeError, ValueError):
+            continue
+        out[name] = {
+            "value": str(value),
+            "confidence": confidence,
+            # Trust the extractor's own verdict when it gave one.
+            "is_flagged": bool(field.get("is_flagged", confidence < LOW_CONFIDENCE_THRESHOLD)),
+        }
+
+    # co_owners is a plain list of names with no score of its own, so it
+    # inherits the record-level one to keep the map a single shape.
+    co_owners = rec.get("co_owners") or []
+    if isinstance(co_owners, list) and co_owners:
+        try:
+            overall = float(rec.get("overall_confidence"))
+        except (TypeError, ValueError):
+            overall = 0.0
+        out["co_owners"] = {
+            "value": ", ".join(str(c) for c in co_owners),
+            "confidence": overall,
+            "is_flagged": overall < LOW_CONFIDENCE_THRESHOLD,
+        }
+    return out
 
 @router.get("", response_model=List[LandRecordResponse])
 async def list_land_records(
@@ -103,6 +157,8 @@ async def create_land_record(record: LandRecordResponse):
             "status": rec_dict.get("status", "UNDER_VERIFICATION"),
             "overall_confidence": float(rec_dict.get("overall_confidence", 0.95)),
             "assigned_officer": rec_dict.get("assigned_officer"),
+            "ocr_extracted_data": _build_ocr_extracted_data(rec_dict),
+            "validation_flags": rec_dict.get("validation_flags") or [],
         }
         if doc_url:
             db_payload["document_url"] = doc_url

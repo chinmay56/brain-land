@@ -27,6 +27,7 @@
 ### C. Officer Verification Portal
 - **Split-Screen Verification Interface**: Displays scanned original document PDF/image side-by-side with extracted AI fields.
 - **Confidence Badging**: Visual field confidence indicators (High / Medium / Low / Flagged).
+- **Per-Field Confidence Persistence**: Extractor confidence for all 12 fields plus co-owners is stored in `land_records.ocr_extracted_data` (alongside `validation_flags`) and drives each field's own badge and the officer queue's low-confidence filter (any field < 0.70), replacing the single record-level score shown on every field.
 - **Officer Review Actions**: Allows officers to edit fields, append official verification notes, approve records, or reject applications with reason codes.
 - **Audit Trail**: Logs timestamps, officer actions, and verification history.
 
