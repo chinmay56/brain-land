@@ -45,6 +45,7 @@ type DocResponse = PlotResponse & {
   data_source_note?: string;
   needs_position?: boolean;
   next_step?: string | null;
+  officer_pin?: { lon: number; lat: number };
   adapter_notes?: { code: string; severity: string; message: string }[];
   extraction?: {
     fields: Record<string, { value: string | null; confidence: number | null }>;
@@ -68,6 +69,8 @@ export default function OfficerGISPage() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [traceMode, setTraceMode] = useState(false);
   const [tracePoints, setTracePoints] = useState<LonLat[]>([]);
+  const [pinMode, setPinMode] = useState(false);
+  const [pinPoint, setPinPoint] = useState<LonLat | null>(null);
 
   const pdfRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
@@ -93,20 +96,26 @@ export default function OfficerGISPage() {
   }, []);
 
   /** Upload a scanned land record → real OCR → adapter → geometry. */
-  const processDocument = useCallback(async (file: File, trace?: LonLat[]) => {
+  const processDocument = useCallback(async (file: File, trace?: LonLat[], pin?: LonLat) => {
     const form = new FormData();
     form.append('file', file);
     if (trace && trace.length >= 3) form.append('trace', JSON.stringify(trace));
+    else if (pin) form.append('pin', JSON.stringify(pin));
     const result = await run(() =>
       fetch(`${API}/api/gis/plot-document?state=Maharashtra`, { method: 'POST', body: form }));
     if (result && result.summary.plotted > 0) {
       setTraceMode(false);
+      setPinMode(false);
+    }
+    if (result?.officer_pin) {
+      setPinPoint([result.officer_pin.lon, result.officer_pin.lat]);
     }
     return result;
   }, [run]);
 
   const loadSample = (village: 'grid' | 'irregular') => {
     setDocFile(null); setTracePoints([]); setTraceMode(false);
+    setPinMode(false); setPinPoint(null);
     return run(async () => {
       const s = await fetch(`${API}/api/gis/sample?village=${village}`, { method: 'POST' });
       const { documents } = await s.json();
@@ -133,6 +142,7 @@ export default function OfficerGISPage() {
 
   const uploadJson = (file: File) => {
     setDocFile(null); setTracePoints([]); setTraceMode(false);
+    setPinMode(false); setPinPoint(null);
     return run(() => {
       const form = new FormData();
       form.append('file', file);
@@ -201,7 +211,10 @@ export default function OfficerGISPage() {
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) { setDocFile(f); setTracePoints([]); void processDocument(f); }
+                if (f) {
+                  setDocFile(f); setTracePoints([]); setPinMode(false); setPinPoint(null);
+                  void processDocument(f);
+                }
                 e.target.value = '';
               }} />
             <input ref={jsonRef} type="file" accept="application/json,.json" className="hidden"
@@ -289,18 +302,25 @@ export default function OfficerGISPage() {
                   {extraction?.fields?.village?.value && (
                     <>Zoom the map to <b>{extraction.fields.village.value}</b>
                       {extraction.fields.district?.value && <>, {extraction.fields.district.value}</>},
-                      switch to Satellite, and click each corner of the parcel.</>
+                      switch to Satellite, and either click each corner of the parcel,
+                      or drop a single pin if you only know roughly where it is.</>
                   )}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {!traceMode ? (
-                <button onClick={() => { setTraceMode(true); setTracePoints([]); }}
-                  className="bg-terracotta-700 hover:bg-terracotta-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl flex items-center gap-2">
-                  <MousePointerClick className="w-4 h-4" /> Trace parcel on map
-                </button>
-              ) : (
+              {!traceMode && !pinMode && !pinPoint ? (
+                <>
+                  <button onClick={() => { setTraceMode(true); setTracePoints([]); setPinPoint(null); }}
+                    className="bg-terracotta-700 hover:bg-terracotta-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl flex items-center gap-2">
+                    <MousePointerClick className="w-4 h-4" /> Trace parcel on map
+                  </button>
+                  <button onClick={() => { setPinMode(true); setPinPoint(null); }}
+                    className="text-xs font-semibold py-2.5 px-4 rounded-xl border border-terracotta-300 text-terracotta-800 hover:bg-terracotta-50 flex items-center gap-2">
+                    <MapPin className="w-4 h-4" /> Drop a pin instead
+                  </button>
+                </>
+              ) : traceMode ? (
                 <>
                   <span className="text-xs font-mono text-stone-500">
                     {tracePoints.length} corner{tracePoints.length === 1 ? '' : 's'}
@@ -320,6 +340,29 @@ export default function OfficerGISPage() {
                     className="bg-[#141416] hover:bg-stone-800 disabled:opacity-40 text-white text-xs font-semibold py-2.5 px-4 rounded-xl flex items-center gap-2">
                     <Target className="w-4 h-4 text-terracotta-400" />
                     Plot with these {tracePoints.length} corners
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs font-mono text-stone-500">
+                    {pinPoint ? 'Pin placed' : 'Click the map once'}
+                  </span>
+                  {pinPoint && (
+                    <button onClick={() => setPinPoint(null)}
+                      className="text-xs font-semibold py-2.5 px-3 rounded-xl border border-[#D7D4CA] hover:bg-[#FAF9F6] flex items-center gap-1.5">
+                      <Undo2 className="w-3.5 h-3.5" /> Redo
+                    </button>
+                  )}
+                  <button onClick={() => { setPinMode(false); setPinPoint(null); }}
+                    className="text-xs font-semibold py-2.5 px-3 rounded-xl border border-[#D7D4CA] hover:bg-[#FAF9F6] flex items-center gap-1.5">
+                    <X className="w-3.5 h-3.5" /> Cancel
+                  </button>
+                  <button
+                    onClick={() => docFile && pinPoint && void processDocument(docFile, undefined, pinPoint)}
+                    disabled={!pinPoint}
+                    className="bg-[#141416] hover:bg-stone-800 disabled:opacity-40 text-white text-xs font-semibold py-2.5 px-4 rounded-xl flex items-center gap-2">
+                    <Target className="w-4 h-4 text-terracotta-400" />
+                    Plot with this pin
                   </button>
                 </>
               )}
@@ -372,6 +415,12 @@ export default function OfficerGISPage() {
                   Click each corner of the parcel
                 </span>
               )}
+              {pinMode && (
+                <span className="text-[11px] font-bold text-terracotta-700 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Click once to drop the pin
+                </span>
+              )}
               <div className="relative w-full sm:w-52">
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Survey no. or owner…"
@@ -390,6 +439,9 @@ export default function OfficerGISPage() {
                 traceMode={traceMode}
                 tracePoints={tracePoints}
                 onTraceAdd={(p) => setTracePoints((prev) => [...prev, p])}
+                pinMode={pinMode}
+                pinPoint={pinPoint}
+                onPinSet={(p) => { setPinPoint(p); setPinMode(false); }}
               />
             </div>
 

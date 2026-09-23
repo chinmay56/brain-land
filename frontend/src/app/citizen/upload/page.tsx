@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 import { MOCK_RECORDS } from '@/data/mockData';
 import { 
   UploadCloud, 
@@ -37,9 +38,10 @@ export default function CitizenUploadPage() {
 
   const [step, setStep] = useState<'upload' | 'processing' | 'preview'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('Submitting document to Sarvam Vision-Language Model...');
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(true);
   const [submitted, setSubmitted] = useState(false);
 
   // Extracted 12 SIH Fields
@@ -85,9 +87,54 @@ export default function CitizenUploadPage() {
 
   const [proposedData, setProposedData] = useState({ ...extractedData });
 
+  // Restore state from sessionStorage on page refresh
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('active_extraction_preview');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.step === 'preview' && parsed.proposedData) {
+            setExtractedData(parsed.extractedData || parsed.proposedData);
+            setProposedData(parsed.proposedData);
+            if (parsed.filePreviewUrl) setFilePreviewUrl(parsed.filePreviewUrl);
+            setStep('preview');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to restore preview state:', err);
+      }
+    }
+  }, []);
+
+  // Sync state changes to sessionStorage when in preview step
+  useEffect(() => {
+    if (step === 'preview' && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('active_extraction_preview', JSON.stringify({
+          step: 'preview',
+          extractedData,
+          proposedData,
+          filePreviewUrl
+        }));
+      } catch (err) {
+        console.error('Failed to persist preview state:', err);
+      }
+    }
+  }, [step, extractedData, proposedData, filePreviewUrl]);
+
+  const processFile = (file: File) => {
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFilePreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      processFile(e.target.files[0]);
     }
   };
 
@@ -95,7 +142,7 @@ export default function CitizenUploadPage() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -153,6 +200,15 @@ export default function CitizenUploadPage() {
 
         setExtractedData(populated);
         setProposedData(populated);
+
+        // Save preview state to sessionStorage
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('active_extraction_preview', JSON.stringify({
+            step: 'preview',
+            extractedData: populated,
+            proposedData: populated
+          }));
+        }
       } else {
         console.error('Backend extraction error:', res.statusText);
       }
@@ -253,16 +309,96 @@ export default function CitizenUploadPage() {
       overallConfidence: proposedData.overall_confidence || 0.94,
       status: 'UNDER_VERIFICATION',
       submissionDate: new Date().toISOString().split('T')[0],
-      assignedOfficer: 'SDO Pune Haveli',
+      assignedDistrict: proposedData.district?.value || 'Pune',
+      assignedTehsil: proposedData.tehsil?.value || 'Haveli',
+      assignedOfficer: `Shri Vikramaditya Joshi (SDO ${proposedData.tehsil?.value || 'Haveli'})`,
       validationFlags: proposedData.validation_flags || [],
       documentPages: 2,
-      supportingDocuments: proposedData.supporting_documents
+      supportingDocuments: proposedData.supporting_documents,
+      submittedBy: user?.name || 'Citizen',
+      submittedById: user?.id || 'usr_cit_001',
+      documentUrl: filePreviewUrl || undefined
     };
 
     // Save to active in-memory list
     MOCK_RECORDS.unshift(newRecord);
 
-    // Save to FastAPI backend if available
+    // Persist to localStorage for client-side navigation
+    if (typeof window !== 'undefined') {
+      try {
+        const savedStr = localStorage.getItem('user_submitted_records');
+        const existing = savedStr ? JSON.parse(savedStr) : [];
+        existing.unshift(newRecord);
+        localStorage.setItem('user_submitted_records', JSON.stringify(existing));
+      } catch (e) {
+        console.error('LocalStorage save error:', e);
+      }
+    }
+
+    // Direct Supabase Storage & DB Insert (Triggers WebSocket Realtime Event to Officers!)
+    try {
+      const docDistrict = (proposedData.district?.value || 'Pune').trim();
+      const docTehsil = (proposedData.tehsil?.value || 'Haveli').trim();
+      
+      const safeDistrict = docDistrict.replace(/[^\w\.-]/g, '_');
+      const safeTehsil = docTehsil.replace(/[^\w\.-]/g, '_');
+      const safeFileName = selectedFile ? selectedFile.name.replace(/[^\w\.-]/g, '_') : 'document.pdf';
+
+      let finalDocUrl: string | null = null;
+
+      if (selectedFile) {
+        try {
+          const storagePath = `${user?.id || 'usr_cit_001'}/${safeDistrict}/${safeTehsil}/${newRecord.applicationNo}/${safeFileName}`;
+          const { data: uploadData } = await supabase.storage.from('land-record-documents').upload(storagePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+          if (uploadData) {
+            const { data: pubData } = supabase.storage.from('land-record-documents').getPublicUrl(storagePath);
+            if (pubData?.publicUrl) {
+              finalDocUrl = pubData.publicUrl;
+              newRecord.documentUrl = pubData.publicUrl;
+              (newRecord as any).document_url = pubData.publicUrl;
+            }
+          }
+        } catch (stErr) {
+          console.warn('Supabase storage upload notice:', stErr);
+        }
+      }
+
+      const { data: dbData, error: dbErr } = await supabase.from('land_records').upsert({
+        id: newRecordId,
+        application_no: newRecord.applicationNo,
+        document_type: newRecord.documentType,
+        state: newRecord.state,
+        district: docDistrict,
+        tehsil: docTehsil,
+        village: proposedData.village?.value || 'Hadapsar',
+        survey_number: proposedData.survey_number?.value || '124/2',
+        khasra_number: proposedData.khasra_number?.value || null,
+        khata_number: proposedData.khata_number?.value || null,
+        owner_name: proposedData.owner_name?.value || 'Land Owner',
+        co_owners: proposedData.co_owners || [],
+        area: parseFloat(proposedData.area?.value || '2.45'),
+        mutation_number: proposedData.mutation_number?.value || null,
+        land_classification: proposedData.land_classification?.value || null,
+        registration_info: proposedData.registration_info || {},
+        status: 'UNDER_VERIFICATION',
+        overall_confidence: proposedData.overall_confidence || 0.94,
+        created_by: user?.id || null,
+        document_url: finalDocUrl || null
+      }).select();
+
+      if (dbErr) {
+        console.error('Supabase DB upsert error:', dbErr);
+      } else {
+        console.log('Successfully upserted record to Supabase DB:', dbData);
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase DB insert notice:', dbErr);
+    }
+
+    // Sync to FastAPI backend if available
     try {
       await fetch(`${API}/api/land-records`, {
         method: 'POST',
@@ -271,6 +407,10 @@ export default function CitizenUploadPage() {
       });
     } catch (err) {
       console.warn('Backend sync warning:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('active_extraction_preview');
     }
 
     setTimeout(() => {
@@ -291,39 +431,17 @@ export default function CitizenUploadPage() {
       {/* Header */}
       <div className="bg-white p-6 rounded-2xl border border-[#E8E6DF] shadow-stone-sm space-y-1">
         <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider">
-          SIH Problem Statement 26018 • Department of Land Resources
+          Department of Land Resources
         </div>
         <h1 className="text-xl font-bold text-stone-900 tracking-tight font-serif">
-          Intelligent Land Record Digitization & Schema Extraction
+          Land Record Digitization &amp; Extraction
         </h1>
         <p className="text-xs text-stone-500">
-          Upload 7/12 Extracts, Sale Deeds, or Mutation registers to extract the 12 core SIH land record fields.
+          Upload 7/12 Extracts, Sale Deeds, or Mutation registers to extract land record fields.
         </p>
       </div>
 
-      {/* Stepper Header */}
-      <div className="flex items-center justify-between bg-white px-6 py-3 rounded-2xl border border-[#E8E6DF] shadow-stone-sm text-xs font-medium">
-        <div className={`flex items-center gap-2 ${step === 'upload' ? 'text-stone-950 font-bold' : 'text-emerald-700'}`}>
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-            step === 'upload' ? 'bg-[#141416] text-white' : 'bg-emerald-700 text-white'
-          }`}>1</div>
-          <span>Select Document</span>
-        </div>
-        <span className="text-stone-300">———</span>
-        <div className={`flex items-center gap-2 ${step === 'processing' ? 'text-stone-950 font-bold' : step === 'preview' ? 'text-emerald-700 font-semibold' : 'text-stone-400'}`}>
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-            step === 'processing' ? 'bg-[#141416] text-white' : step === 'preview' ? 'bg-emerald-700 text-white' : 'bg-stone-100 text-stone-500'
-          }`}>2</div>
-          <span>Sarvam Doc AI Schema Extraction</span>
-        </div>
-        <span className="text-stone-300">———</span>
-        <div className={`flex items-center gap-2 ${step === 'preview' ? 'text-stone-950 font-bold' : 'text-stone-400'}`}>
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-            step === 'preview' ? 'bg-[#141416] text-white' : 'bg-stone-100 text-stone-500'
-          }`}>3</div>
-          <span>Review 12 SIH Fields & Submit</span>
-        </div>
-      </div>
+
 
       {/* STEP 1: Upload Dropzone */}
       {step === 'upload' && (
@@ -372,7 +490,7 @@ export default function CitizenUploadPage() {
                   <div>
                     <div className="text-sm font-bold text-stone-900">{selectedFile.name}</div>
                     <div className="text-xs text-stone-500 font-mono mt-0.5">
-                      {formatFileSize(selectedFile.size)} • Ready for Schema-Based Extraction
+                      {formatFileSize(selectedFile.size)} • Ready for Extraction
                     </div>
                   </div>
                 </div>
@@ -400,7 +518,7 @@ export default function CitizenUploadPage() {
                   onClick={handleStartProcessing}
                   className="bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-stone-sm transition-all flex items-center gap-2"
                 >
-                  <span>Process Document with Sarvam Doc AI</span>
+                  <span>Process Document</span>
                   <ArrowRight className="w-3.5 h-3.5 text-terracotta-400" />
                 </button>
               </div>
@@ -411,71 +529,27 @@ export default function CitizenUploadPage() {
 
       {/* STEP 2: Processing Screen */}
       {step === 'processing' && (
-        <div className="bg-white rounded-2xl border border-[#E8E6DF] shadow-stone-sm p-12 text-center space-y-4">
+        <div className="bg-white rounded-2xl border border-[#E8E6DF] shadow-stone-sm p-12 text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-stone-100 border border-[#E8E6DF] flex items-center justify-center mx-auto animate-spin">
             <Cpu className="w-6 h-6 text-terracotta-700" />
           </div>
-          <h2 className="text-base font-bold text-stone-900 tracking-tight">
-            Extracting 12 SIH Fields with Sarvam AI Vision...
+          <h2 className="text-base font-bold text-stone-900 tracking-tight font-serif">
+            Extraction in Progress...
           </h2>
           <p className="text-xs text-stone-500 max-w-md mx-auto">
-            {processingStatus}
+            Please wait while land record data is being extracted.
           </p>
-          <div className="inline-flex items-center gap-2 bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-xl text-[11px] text-stone-600 font-mono">
-            <Sparkles className="w-3.5 h-3.5 text-terracotta-600" />
-            <span>Endpoint: POST /doc-ai/v1/job/extract • JSON Schema with Strict Field Rules</span>
-          </div>
         </div>
       )}
 
       {/* STEP 3: Preview the 12 SIH Fields */}
       {step === 'preview' && (
         <form onSubmit={handleSubmitVerification} className="space-y-5">
-          {/* Record Completeness Bar */}
-          <div className="bg-white p-5 rounded-2xl border border-[#E8E6DF] shadow-stone-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-stone-900">
-                  Digitization Completeness: {completeness.percentage}% ({completeness.filled}/{completeness.total} SIH Fields Populated)
-                </span>
-                <div className="text-[11px] text-stone-500 mt-0.5">
-                  Source: {proposedData.supporting_documents.join(' + ') || selectedFile?.name}
-                </div>
-              </div>
-
-              {/* Upload Supporting Document to fill remaining nulls */}
-              <div>
-                <input 
-                  type="file"
-                  ref={supportingFileInputRef}
-                  onChange={handleSupportingFileUpload}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => supportingFileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 bg-terracotta-50 hover:bg-terracotta-100 text-terracotta-800 border border-terracotta-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors shadow-stone-sm"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>Add Supporting Deed (Sale Deed / 8A)</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-emerald-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${completeness.percentage}%` }}
-              />
-            </div>
-          </div>
-
           {/* Form Header */}
           <div className="flex items-center justify-between bg-white px-6 py-3 rounded-2xl border border-[#E8E6DF] shadow-stone-sm">
             <div>
               <h2 className="text-sm font-bold text-stone-900">
-                12 SIH Land Record Fields Preview
+                Extracted Land Record Fields Preview
               </h2>
               <p className="text-[11px] text-stone-500">
                 Extracted and verified against Department of Land Resources (DoLR) business rules
@@ -487,7 +561,7 @@ export default function CitizenUploadPage() {
               className="flex items-center gap-1 text-xs font-semibold text-terracotta-700 hover:text-terracotta-800 bg-terracotta-50 px-3 py-1.5 rounded-lg border border-terracotta-200 transition-colors"
             >
               <Edit3 className="w-3.5 h-3.5" />
-              <span>{isEditing ? 'Cancel Edit' : 'Propose Changes'}</span>
+              <span>{isEditing ? 'Editing Enabled' : 'Edit Fields'}</span>
             </button>
           </div>
 
@@ -520,12 +594,14 @@ export default function CitizenUploadPage() {
 
               <div className="space-y-1">
                 <label className="text-stone-500 font-medium block">2. Co-Owners / Co-Sharers (सह-खातेदार)</label>
-                <div className="px-3 py-2 border border-[#D7D4CA] rounded-xl bg-stone-50 text-stone-800 font-mono text-[11px] min-h-[38px] flex items-center">
-                  {proposedData.co_owners && proposedData.co_owners.length > 0 
-                    ? proposedData.co_owners.join(', ')
-                    : <span className="text-stone-400 italic">— Single Owner Holding</span>
-                  }
-                </div>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={Array.isArray(proposedData.co_owners) ? proposedData.co_owners.join(', ') : ''}
+                  placeholder="e.g. Sau. Mina Satish Pawar, Shri Dilip Shaligram Aagiwal"
+                  onChange={(e) => setProposedData({ ...proposedData, co_owners: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                  className="w-full px-3 py-2 border border-[#D7D4CA] rounded-xl text-stone-900 disabled:bg-stone-50"
+                />
               </div>
             </div>
           </div>
@@ -535,7 +611,7 @@ export default function CitizenUploadPage() {
             <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
               <Layers className="w-4 h-4 text-terracotta-700" />
               <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider">
-                2. Cadastral & Spatial Identifiers (GIS Ready)
+                2. Cadastral &amp; Spatial Identifiers
               </h3>
             </div>
 
@@ -738,19 +814,14 @@ export default function CitizenUploadPage() {
 
               <div className="space-y-1">
                 <label className="text-stone-500 font-medium block">Registration Information</label>
-                {proposedData.registration_info?.value ? (
-                  <input
-                    type="text"
-                    disabled={!isEditing}
-                    value={proposedData.registration_info.value}
-                    onChange={(e) => setProposedData({ ...proposedData, registration_info: { ...proposedData.registration_info, value: e.target.value } })}
-                    className="w-full px-3 py-2 border border-[#D7D4CA] rounded-xl font-mono text-stone-900 disabled:bg-stone-50 text-[11px]"
-                  />
-                ) : (
-                  <div className="px-3 py-2 border border-dashed border-stone-300 rounded-xl bg-stone-50 text-stone-400 text-[11px] italic min-h-[38px] flex items-center">
-                    — Awaiting Sale Deed
-                  </div>
-                )}
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={proposedData.registration_info?.value || ''}
+                  placeholder="e.g. Deed Reg No: 3594/2015, SRO Jalgaon-1"
+                  onChange={(e) => setProposedData({ ...proposedData, registration_info: { ...proposedData.registration_info, value: e.target.value } })}
+                  className="w-full px-3 py-2 border border-[#D7D4CA] rounded-xl font-mono text-stone-900 disabled:bg-stone-50 text-[11px]"
+                />
               </div>
             </div>
           </div>

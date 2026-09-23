@@ -462,6 +462,16 @@ async def plot_document(
         None, description='Officer-traced corners as JSON: [[lon,lat],[lon,lat],…]. '
                           'Supply on the second call, after the officer has drawn '
                           'the parcel on imagery.'),
+    pin: Optional[str] = Form(
+        None, description='A single officer-placed anchor point as JSON [lon,lat]. '
+                          'Use when the officer can point at roughly where the parcel '
+                          'is but cannot yet trace its full boundary. If the document '
+                          'also carries a reconstructed shape (traverse or chain-offset), '
+                          'this one point is enough to place that shape on the ground '
+                          '(rotation is then assumed true north). If the document has '
+                          'no shape at all, the pin is returned as `officer_pin` so it '
+                          'can still be shown on the map as an approximate location. '
+                          'Ignored if `trace` is also supplied.'),
     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
 ) -> Dict[str, Any]:
     """
@@ -473,7 +483,9 @@ async def plot_document(
     back with the fields extracted and `needs_position` set — that is correct,
     not a failure. Call again with `trace` once the officer has marked the parcel
     corners on imagery, and the parcel plots with its declared area cross-checking
-    the trace.
+    the trace. If a full trace is not available yet, `pin` accepts a single
+    officer-placed point instead — enough to anchor a reconstructed shape, or to
+    at least mark the approximate location on the map.
 
     The response always reports `data_source`, so a demo can never silently show
     fixture data as though it were a live extraction.
@@ -509,6 +521,28 @@ async def plot_document(
         if not isinstance(traced_points, list) or len(traced_points) < 3:
             raise HTTPException(400, "A traced parcel needs at least 3 corners.")
         document["coordinates"] = {"points": traced_points, "crs": "WGS84", "order": "xy"}
+
+    # A single officer-placed pin. Only used when there is no full trace: a
+    # trace is a real boundary and always wins over one approximate point.
+    pin_point: Optional[List[float]] = None
+    if pin and not traced_points:
+        try:
+            pin_point = json.loads(pin)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"`pin` is not valid JSON: {exc}")
+        if not isinstance(pin_point, list) or len(pin_point) != 2:
+            raise HTTPException(400, "`pin` must be [lon, lat].")
+        lon, lat = float(pin_point[0]), float(pin_point[1])
+        problems = crs.validate_lonlat(lon, lat)
+        if problems:
+            raise HTTPException(400, "; ".join(problems))
+        # local=[0,0]: with no shape reconstructed yet the local frame is
+        # arbitrary, so the origin is as good a place as any to hang the pin.
+        # Once a traverse/chain-offset shape exists, _place() uses this single
+        # control point to fix its position (rotation assumed true north).
+        document["control_points"] = [
+            {"lon": lon, "lat": lat, "local": [0.0, 0.0], "label": "officer-pin"}
+        ]
 
     try:
         doc_in = DocumentIn(**document)
@@ -546,11 +580,25 @@ async def plot_document(
     }
     result["adapter_notes"] = notes
     result["needs_position"] = result["summary"]["plotted"] == 0
-    result["next_step"] = (
-        None if result["summary"]["plotted"]
-        else "This document type carries no geometry. Ask the officer to trace the "
-             "parcel corners on imagery, then POST again with `trace`."
-    )
+    if result["summary"]["plotted"]:
+        result["next_step"] = None
+    elif pin_point:
+        # The pin didn't anchor anything because there was no reconstructed
+        # shape to place — most 7/12s. Hand it back anyway so the map can show
+        # where the officer says the parcel is, honestly labelled as a pin and
+        # not a surveyed boundary.
+        result["officer_pin"] = {"lon": pin_point[0], "lat": pin_point[1]}
+        result["next_step"] = (
+            "This document carries no reconstructable shape (no traverse or "
+            "chain-offset ladder), so the pin is shown as an approximate location "
+            "only. Trace the parcel corners on imagery for a real boundary."
+        )
+    else:
+        result["next_step"] = (
+            "This document type carries no geometry. Ask the officer to trace the "
+            "parcel corners on imagery, or drop a single pin for an approximate "
+            "position, then POST again with `trace` or `pin`."
+        )
     return result
 
 

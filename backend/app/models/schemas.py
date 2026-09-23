@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+from pydantic.alias_generators import to_camel
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -22,20 +23,23 @@ class SeverityLevel(str, Enum):
     CRITICAL = "CRITICAL"
 
 class FieldConfidence(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
     value: str
     confidence: float = Field(..., ge=0.0, le=1.0)
     is_flagged: bool = False
     source_doc: Optional[str] = None
 
 class ValidationFlag(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
     id: str
     field: str
     severity: SeverityLevel
     message: str
     suggested_action: Optional[str] = None
 
-# The 12 SIH Problem Statement Fields
+# The 12 Land Record Fields
 class LandRecordBase(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
     document_type: str = "7/12 Extract (Record of Rights)"
     owner_name: FieldConfidence
     co_owners: Optional[List[str]] = []
@@ -57,6 +61,7 @@ class LandRecordCreate(LandRecordBase):
     pass
 
 class LandRecordResponse(LandRecordBase):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
     id: str
     application_no: str
     overall_confidence: float
@@ -64,11 +69,15 @@ class LandRecordResponse(LandRecordBase):
     submission_date: str
     verified_date: Optional[str] = None
     assigned_officer: Optional[str] = None
+    assigned_district: Optional[str] = None
+    assigned_tehsil: Optional[str] = None
     officer_remarks: Optional[str] = None
     validation_flags: List[ValidationFlag] = []
     document_url: Optional[str] = None
     document_pages: int = 1
-    supporting_documents: List[Dict[str, Any]] = []
+    supporting_documents: List[Any] = []
+    created_by: Optional[str] = None
+    submitted_by_id: Optional[str] = None
 
 class OfficerVerificationAction(BaseModel):
     record_id: str
