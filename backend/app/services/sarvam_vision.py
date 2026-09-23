@@ -8,6 +8,24 @@ from app.models.schemas import FieldConfidence
 
 logger = logging.getLogger(__name__)
 
+
+class ExtractionError(Exception):
+    """
+    Extraction was attempted against the real API and did not produce a reading.
+
+    Raised only when a key is configured. The alternative — quietly handing back
+    fixture data — puts a plausible but invented land record in front of an
+    officer who is about to certify it, which is the one failure mode this
+    system cannot have. No key configured is a different situation: nothing was
+    attempted, so the fixture is honest demo data and is returned as before.
+    """
+
+    def __init__(self, reason: str, http_status: Optional[int] = None, retryable: bool = False):
+        super().__init__(reason)
+        self.reason = reason
+        self.http_status = http_status
+        self.retryable = retryable
+
 # Valid Schema adhering 100% to Sarvam AI Doc AI Specification (Every property & item has a description)
 LAND_RECORD_EXTRACTION_SCHEMA = {
     "type": "object",
@@ -347,6 +365,22 @@ class SarvamDocAIExtractor:
             return "image/jpeg"
         return "application/pdf"
 
+    @staticmethod
+    def _api_detail(response: Any) -> str:
+        """The API's own words for why it refused, for the officer-facing reason."""
+        try:
+            body = response.json()
+        except Exception:
+            return (getattr(response, "text", "") or "no detail").strip()[:200]
+        if isinstance(body, dict):
+            for key in ("error", "message", "detail", "reason"):
+                value = body.get(key)
+                if isinstance(value, dict):
+                    value = value.get("message") or value.get("detail")
+                if value:
+                    return str(value)[:200]
+        return str(body)[:200]
+
     async def extract_land_record(self, file_bytes: bytes, file_name: str) -> Dict[str, Any]:
         """
         Submits document with schema to Sarvam Doc AI, polls status, and returns
@@ -363,19 +397,36 @@ class SarvamDocAIExtractor:
         send_filename = file_name
         total_pages = 1
 
-        # Calculate exact document page count & auto-trim PDFs over 10 pages
+        # Calculate exact document page count & auto-trim PDFs over 10 pages.
+        # Page counting uses pypdf (always installed); only the trim itself
+        # needs pymupdf, so a short document still works without it.
         if file_name.lower().endswith(".pdf"):
             try:
-                import pymupdf
-                doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-                total_pages = len(doc)
-                if total_pages > 10:
+                from io import BytesIO
+                from pypdf import PdfReader
+                total_pages = len(PdfReader(BytesIO(file_bytes)).pages)
+            except Exception as count_err:
+                logger.warning("Could not count pages of %s: %s", file_name, count_err)
+
+            if total_pages > 10:
+                try:
+                    import pymupdf
+                except ImportError as exc:
+                    # Sending an over-length document would be rejected by the
+                    # API anyway; say why rather than fail obscurely downstream.
+                    raise ExtractionError(
+                        f"PDF trimming unavailable: pymupdf not installed, and "
+                        f"{file_name} has {total_pages} pages (limit is 10).",
+                        retryable=False,
+                    ) from exc
+                try:
                     logger.info(f"{file_name} has {total_pages} pages. Trimming to first 10 pages for Sarvam AI 10-page limit...")
+                    doc = pymupdf.open(stream=file_bytes, filetype="pdf")
                     sub_doc = pymupdf.open()
                     sub_doc.insert_pdf(doc, from_page=0, to_page=9)
                     send_bytes = sub_doc.tobytes()
-            except Exception as pdf_err:
-                logger.warning(f"PDF 10-page trim notice for {file_name}: {pdf_err}")
+                except Exception as pdf_err:
+                    logger.warning("PDF 10-page trim failed for %s: %s", file_name, pdf_err, exc_info=True)
 
         # Official Sarvam Header (ONLY api-subscription-key)
         headers = {
@@ -394,18 +445,30 @@ class SarvamDocAIExtractor:
                 init_res = await client.post(f"{self.base_url}/doc-ai/v1/job/extract", headers=headers, files=files, data=data)
                 
                 if init_res.status_code not in [200, 201, 202]:
-                    logger.warning(f"Sarvam Extract API returned HTTP {init_res.status_code}: {init_res.text}")
-                    return self._get_calibrated_baseline(file_name)
+                    logger.error(f"Sarvam Extract API returned HTTP {init_res.status_code}: {init_res.text}")
+                    raise ExtractionError(
+                        f"Sarvam returned HTTP {init_res.status_code}: "
+                        f"{self._api_detail(init_res)}",
+                        http_status=init_res.status_code,
+                        # 5xx and rate limiting are worth another go; a rejected
+                        # key or an exhausted balance will not fix itself.
+                        retryable=init_res.status_code in (429, 500, 502, 503, 504),
+                    )
 
                 job_data = init_res.json()
                 job_id = job_data.get("job_id")
                 if not job_id:
-                    logger.warning(f"No job_id in Sarvam response: {job_data}")
-                    return self._get_calibrated_baseline(file_name)
+                    logger.error(f"No job_id in Sarvam response: {job_data}")
+                    raise ExtractionError(
+                        "Sarvam accepted the document but returned no job id.",
+                        http_status=init_res.status_code,
+                        retryable=True,
+                    )
 
                 # 2. Poll for Job Completion (up to 120 seconds for multi-page documents)
                 logger.info(f"Polling Sarvam Doc AI job {job_id} status...")
                 extracted_json = None
+                completed = False
                 for attempt in range(60):
                     await asyncio.sleep(2)
                     status_res = await client.get(f"{self.base_url}/doc-ai/v1/job/{job_id}/status", headers=headers)
@@ -413,26 +476,40 @@ class SarvamDocAIExtractor:
                         status_data = status_res.json()
                         job_status = status_data.get("status")
                         logger.info(f"Job {job_id} status: {job_status} (attempt {attempt+1})")
-                        
+
                         if job_status == "completed":
+                            completed = True
                             # 3. Retrieve Extraction Results
                             results_res = await client.get(f"{self.base_url}/doc-ai/v1/job/{job_id}/results", headers=headers)
                             if results_res.status_code == 200:
                                 extracted_json = results_res.json()
                             break
                         elif job_status in ["failed", "rejected"]:
-                            logger.error(f"Job {job_id} failed: {status_data.get('error')}")
-                            break
+                            detail = status_data.get("error") or job_status
+                            logger.error(f"Job {job_id} failed: {detail}")
+                            raise ExtractionError(f"Job failed: {detail}", retryable=False)
+
+                if not completed:
+                    raise ExtractionError("Job timed out after 120 s", retryable=True)
 
                 if not extracted_json or not extracted_json.get("result"):
-                    logger.warning(f"Falling back to baseline for {file_name}")
-                    return self._get_calibrated_baseline(file_name)
+                    raise ExtractionError(
+                        "Sarvam reported the job complete but returned no extracted fields.",
+                        retryable=True,
+                    )
 
                 return self._map_sarvam_results(extracted_json, file_name)
 
+        except ExtractionError:
+            raise
+        except httpx.TimeoutException as e:
+            logger.error(f"Sarvam extraction timed out: {e}")
+            raise ExtractionError(f"Sarvam request timed out: {e}", retryable=True) from e
         except Exception as e:
-            logger.error(f"Error during Sarvam extraction: {e}")
-            return self._get_calibrated_baseline(file_name)
+            logger.error(f"Error during Sarvam extraction: {e}", exc_info=True)
+            raise ExtractionError(
+                f"Extraction failed: {type(e).__name__}: {e}", retryable=True
+            ) from e
 
     def _map_sarvam_results(self, sarvam_resp: Dict[str, Any], file_name: str) -> Dict[str, Any]:
         """
@@ -566,7 +643,10 @@ class SarvamDocAIExtractor:
                 "document_pages": 1,
             }
 
-        is_deed_or_jalgaon = any(k in fn_lower for k in ["deed", "sale", "new doc", "jalgaon", "demo", "final", "pdf", "doc"])
+        # Only names that actually say "deed". "pdf" and "doc" used to be in
+        # here, which matched almost every upload and handed back a Jalgaon
+        # sale deed for documents that were nothing of the kind.
+        is_deed_or_jalgaon = any(k in fn_lower for k in ["deed", "sale", "jalgaon", "kharedi"])
 
         if is_deed_or_jalgaon:
             return {

@@ -38,7 +38,8 @@ import {
   ExternalLink,
   RotateCcw,
   RotateCw,
-  History
+  History,
+  Edit3
 } from 'lucide-react';
 
 export default function OfficerVerificationWorkspacePage() {
@@ -552,6 +553,26 @@ export default function OfficerVerificationWorkspacePage() {
 
           {/* Form Comparison Box */}
           <div className="bg-white rounded-xl border border-[#E8E6DF] p-5 space-y-4 shadow-stone-sm">
+            {/* Where these values came from. An officer certifying fixture
+                data would be certifying a record of nothing. */}
+            {dbRecord?.data_source === 'DEMO_FALLBACK' && (
+              <div className="mb-4 bg-rose-600 text-white rounded-xl px-4 py-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div className="text-xs font-semibold leading-relaxed">
+                  This record was created from demo data, not from the document.
+                  <span className="block font-bold mt-0.5">Do not certify.</span>
+                </div>
+              </div>
+            )}
+            {dbRecord?.data_source === 'MANUAL' && (
+              <div className="mb-4 bg-amber-50 border border-amber-300 text-amber-950 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                <Edit3 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div className="text-xs font-semibold leading-relaxed">
+                  Fields were entered manually by the citizen; no AI extraction was performed.
+                </div>
+              </div>
+            )}
+
             <div className="border-b border-stone-100 pb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-bold text-stone-900 tracking-tight">

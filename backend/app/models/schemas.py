@@ -73,6 +73,8 @@ class LandRecordResponse(LandRecordBase):
     assigned_tehsil: Optional[str] = None
     officer_remarks: Optional[str] = None
     validation_flags: List[ValidationFlag] = []
+    # SARVAM_LIVE | DEMO_FALLBACK | MANUAL — where these field values came from.
+    data_source: Optional[str] = None
     document_url: Optional[str] = None
     document_pages: int = 1
     supporting_documents: List[Any] = []

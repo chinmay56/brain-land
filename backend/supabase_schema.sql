@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Provenance of the field values on a record: SARVAM_LIVE (read from the
+-- document), DEMO_FALLBACK (built-in fixture, no key configured) or MANUAL
+-- (typed by the citizen). An officer must be able to see which before certifying.
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS data_source TEXT;
+
 -- 3b. Reference Master (read-only government RoR extract used for cross-verification)
 -- Not a record of applications: this is what the department already holds, and is
 -- what an extracted document is checked against for owner and area discrepancies.

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.services.sarvam_vision import sarvam_service
+from fastapi.responses import JSONResponse
+from app.services.sarvam_vision import ExtractionError, sarvam_service
 from app.services.validation_engine import validation_engine
 from app.services.reference_check import check_duplicates, check_reference
 
@@ -8,7 +9,19 @@ router = APIRouter(prefix="/extraction", tags=["AI Extraction"])
 @router.post("/process")
 async def extract_from_document(file: UploadFile = File(...)):
     file_bytes = await file.read()
-    extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
+    try:
+        extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
+    except ExtractionError as exc:
+        # A configured key that failed means nothing was read. Say so instead
+        # of substituting fixture data that looks like a reading.
+        return JSONResponse(status_code=502, content={
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": exc.reason,
+            "retryable": exc.retryable,
+            "http_status": exc.http_status,
+        })
+
     validation_flags = validation_engine.validate_extracted_record(extracted_data)
 
     # Cross-verification against the department's own master, and against

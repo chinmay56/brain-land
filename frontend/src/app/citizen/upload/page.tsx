@@ -45,6 +45,24 @@ const LOW_CONFIDENCE_THRESHOLD = 0.70;
 
 type OcrField = { value: string; confidence: number; is_flagged: boolean };
 
+/**
+ * A confidence score describes how well the AI read something. When the
+ * citizen typed the value in themselves there is nothing to be confident
+ * about, and showing "0%" in red would read as a bad extraction rather than
+ * an absent one.
+ */
+function FieldBadge({ confidence, manual }: { confidence: number; manual: boolean }) {
+  if (manual) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-300">
+        <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
+        Manually entered, not AI-extracted
+      </span>
+    );
+  }
+  return <ConfidenceBadge confidence={Math.round((confidence || 0) * 100)} size="sm" />;
+}
+
 function buildOcrExtractedData(data: any): Record<string, OcrField> {
   const out: Record<string, OcrField> = {};
 
@@ -91,7 +109,11 @@ export default function CitizenUploadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supportingFileInputRef = useRef<HTMLInputElement>(null);
 
-  const [step, setStep] = useState<'upload' | 'processing' | 'preview'>('upload');
+  const [step, setStep] = useState<'upload' | 'processing' | 'preview' | 'failed'>('upload');
+  const [extractionError, setExtractionError] =
+    useState<{ reason: string; retryable: boolean; http_status: number | null } | null>(null);
+  // null = not yet known. Drives the readiness pill near the upload box.
+  const [sarvamReady, setSarvamReady] = useState<boolean | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -144,6 +166,20 @@ export default function CitizenUploadPage() {
   });
 
   const [proposedData, setProposedData] = useState({ ...extractedData });
+
+  const isManual = proposedData.data_source === 'MANUAL';
+  const isDemoData = proposedData.data_source === 'DEMO_FALLBACK';
+
+  // Whether this server can extract at all. Worth knowing before uploading,
+  // not after — an unconfigured instance silently serves fixture data.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API}/`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setSarvamReady(Boolean(j?.sarvam_configured)); })
+      .catch(() => { if (!cancelled) setSarvamReady(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Restore state from sessionStorage on page refresh
   useEffect(() => {
@@ -217,8 +253,10 @@ export default function CitizenUploadPage() {
   const handleStartProcessing = async () => {
     if (!selectedFile) return;
     setStep('processing');
+    setExtractionError(null);
     setProcessingStatus('Connecting to Sarvam AI Document Intelligence API (/job/extract)...');
 
+    let failed = false;
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
@@ -268,16 +306,50 @@ export default function CitizenUploadPage() {
             proposedData: populated
           }));
         }
+        setExtractionError(null);
       } else {
-        console.error('Backend extraction error:', res.statusText);
+        // The backend read nothing. Showing the preview anyway would present
+        // stale or blank fields as though they came off the document.
+        const body = await res.json().catch(() => ({} as any));
+        console.error('Backend extraction error:', body || res.statusText);
+        failed = true;
+        setExtractionError({
+          reason: body?.reason || `The extraction service returned HTTP ${res.status}.`,
+          retryable: body?.retryable ?? true,
+          http_status: body?.http_status ?? res.status,
+        });
       }
     } catch (err) {
       console.error('API connection error:', err);
+      failed = true;
+      setExtractionError({
+        reason: 'Could not reach the extraction service. It may be offline.',
+        retryable: true,
+        http_status: null,
+      });
     } finally {
       setTimeout(() => {
-        setStep('preview');
+        setStep(failed ? 'failed' : 'preview');
       }, 1000);
     }
+  };
+
+  /** Start over with blank fields the citizen fills in themselves. */
+  const startManualEntry = () => {
+    const blank: any = { ...extractedData };
+    CONFIDENCE_FIELDS.forEach((name) => {
+      blank[name] = { value: '', confidence: 0 };
+    });
+    blank.co_owners = [];
+    blank.overall_confidence = 0;
+    blank.validation_flags = [];
+    blank.supporting_documents = selectedFile ? [selectedFile.name] : [];
+    blank.data_source = 'MANUAL';
+    setExtractedData(blank);
+    setProposedData(blank);
+    setExtractionError(null);
+    setIsEditing(true);
+    setStep('preview');
   };
 
   // Upload Supporting Document to Merge Missing Fields
@@ -376,8 +448,9 @@ export default function CitizenUploadPage() {
       supportingDocuments: proposedData.supporting_documents,
       submittedBy: user?.name || 'Citizen',
       submittedById: user?.id || 'usr_cit_001',
-      documentUrl: filePreviewUrl || undefined
-    };
+      documentUrl: filePreviewUrl || undefined,
+      data_source: proposedData.data_source || 'UNKNOWN'
+    } as any;
 
     // Save to active in-memory list
     MOCK_RECORDS.unshift(newRecord);
@@ -446,6 +519,7 @@ export default function CitizenUploadPage() {
         overall_confidence: proposedData.overall_confidence || 0.94,
         ocr_extracted_data: buildOcrExtractedData(proposedData),
         validation_flags: proposedData.validation_flags || [],
+        data_source: proposedData.data_source || 'UNKNOWN',
         created_by: user?.id || null,
         document_url: finalDocUrl || null
       }).select();
@@ -541,6 +615,23 @@ export default function CitizenUploadPage() {
       </div>
 
 
+
+      {/* Whether this server can actually read a document, said before upload
+          rather than after. */}
+      {step === 'upload' && sarvamReady !== null && (
+        <div className="flex justify-center">
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border ${
+            sarvamReady
+              ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+              : 'bg-amber-50 text-amber-900 border-amber-300'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${sarvamReady ? 'bg-emerald-600' : 'bg-amber-500'}`} />
+            {sarvamReady
+              ? 'Live extraction: ready'
+              : 'Live extraction: not configured, demo data will be used'}
+          </span>
+        </div>
+      )}
 
       {/* STEP 1: Upload Dropzone */}
       {step === 'upload' && (
@@ -641,9 +732,73 @@ export default function CitizenUploadPage() {
         </div>
       )}
 
+      {/* Extraction failed. No fields are shown, because none were read. */}
+      {step === 'failed' && (
+        <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-rose-700 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-rose-950">Extraction failed.</h2>
+              <p className="text-sm text-rose-900 mt-1 leading-relaxed">
+                {extractionError?.reason}
+              </p>
+              <p className="text-sm font-semibold text-rose-950 mt-2">
+                Nothing was read from your document.
+              </p>
+              {extractionError?.http_status && (
+                <p className="text-[11px] font-mono text-rose-700 mt-1">
+                  HTTP {extractionError.http_status}
+                  {extractionError.retryable ? ' · retrying may help' : ' · retrying will not help'}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5 pl-9">
+            <button
+              type="button"
+              onClick={handleStartProcessing}
+              className="bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-stone-sm"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={startManualEntry}
+              className="bg-white hover:bg-stone-50 text-stone-800 border border-[#D7D4CA] text-xs font-semibold px-4 py-2.5 rounded-xl"
+            >
+              Enter details manually
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* STEP 3: Preview the 12 SIH Fields */}
       {step === 'preview' && (
         <form onSubmit={handleSubmitVerification} className="space-y-5">
+          {/* Fixture data must never be mistaken for a reading of the upload. */}
+          {isDemoData && (
+            <div className="w-full bg-rose-600 text-white rounded-2xl px-6 py-4 shadow-stone-sm">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-6 h-6 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-base font-bold tracking-tight">DEMO DATA</div>
+                  <p className="text-sm mt-0.5 leading-relaxed">
+                    No API key is configured on the server. These values were{' '}
+                    <strong>NOT</strong> read from your document.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isManual && (
+            <div className="w-full bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl px-5 py-3 text-xs font-semibold flex items-center gap-2">
+              <Edit3 className="w-4 h-4 flex-shrink-0" />
+              Manual entry — fill in the fields yourself. No AI extraction was performed.
+            </div>
+          )}
+
           {/* Form Header */}
           <div className="flex items-center justify-between bg-white px-6 py-3 rounded-2xl border border-[#E8E6DF] shadow-stone-sm">
             <div>
@@ -677,8 +832,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">1. Primary Landowner Name</label>
-                  {proposedData.owner_name?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.owner_name.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.owner_name?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.owner_name.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -718,8 +873,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">3. Survey / Gut Number</label>
-                  {proposedData.survey_number?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.survey_number.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.survey_number?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.survey_number.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -735,8 +890,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">4. Khasra Number</label>
-                  {proposedData.khasra_number?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.khasra_number.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.khasra_number?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.khasra_number.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -752,8 +907,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">5. Khata Number</label>
-                  {proposedData.khata_number?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.khata_number.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.khata_number?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.khata_number.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -839,8 +994,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">9. Plot Area ({proposedData.area_unit || 'Hectares'})</label>
-                  {proposedData.area?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.area.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.area?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.area.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -856,8 +1011,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">10. Land Classification</label>
-                  {proposedData.land_classification?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.land_classification.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.land_classification?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.land_classification.confidence} manual={isManual} />
                   )}
                 </div>
                 <input
@@ -897,8 +1052,8 @@ export default function CitizenUploadPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="text-stone-500 font-medium">12. Mutation / Ferfar No.</label>
-                  {proposedData.mutation_number?.confidence > 0 && (
-                    <ConfidenceBadge confidence={Math.round(proposedData.mutation_number.confidence * 100)} size="sm" />
+                  {(isManual || proposedData.mutation_number?.confidence > 0) && (
+                    <FieldBadge confidence={proposedData.mutation_number.confidence} manual={isManual} />
                   )}
                 </div>
                 <input

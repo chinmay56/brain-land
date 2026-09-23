@@ -159,6 +159,7 @@ async def create_land_record(record: LandRecordResponse):
             "assigned_officer": rec_dict.get("assigned_officer"),
             "ocr_extracted_data": _build_ocr_extracted_data(rec_dict),
             "validation_flags": rec_dict.get("validation_flags") or [],
+            "data_source": rec_dict.get("data_source") or "UNKNOWN",
         }
         if doc_url:
             db_payload["document_url"] = doc_url

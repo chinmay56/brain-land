@@ -21,6 +21,9 @@ aiofiles>=23.2.1
 # Image Processing & Document Handling
 Pillow>=10.2.0
 pypdf>=4.1.0
+# Needed to trim PDFs over Sarvam's 10-page limit. It was already imported by
+# sarvam_vision.py but never declared, so the trim silently failed in deploys.
+pymupdf>=1.24
 
 # opencv-python-headless and pdf2image are imported nowhere in app/. Together
 # they add ~150 MB to the image and several minutes to every build, which the

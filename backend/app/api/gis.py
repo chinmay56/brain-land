@@ -522,10 +522,26 @@ async def plot_document(
     if not raw:
         raise HTTPException(400, "Uploaded file is empty.")
 
+    from app.services.sarvam_vision import ExtractionError
+
     try:
         extracted = await sarvam_service.extract_land_record(raw, file.filename or "record.pdf")
+    except ExtractionError as exc:
+        raise HTTPException(502, {
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": exc.reason,
+            "retryable": exc.retryable,
+            "http_status": exc.http_status,
+        })
     except Exception as exc:                                  # pragma: no cover
-        raise HTTPException(502, f"Extraction stage failed: {type(exc).__name__}: {exc}")
+        raise HTTPException(502, {
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": f"Extraction stage failed: {type(exc).__name__}: {exc}",
+            "retryable": True,
+            "http_status": None,
+        })
 
     data_source = extracted.get("data_source", "UNKNOWN")
 

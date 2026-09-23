@@ -8,9 +8,10 @@
 
 ---
 
-## 🟢 1. Fully Built & Production-Ready Capabilities
+## 🟢 1. Built and Demonstrable
 
 ### A. AI Document Intelligence & Multilingual OCR
+- **Fail-Loud Extraction & Provenance**: With an API key configured, any Sarvam failure (HTTP 402, job failure, 120 s timeout) now raises `ExtractionError` and the endpoints return HTTP 502 with a human-readable reason instead of substituting fixture data; fixtures are served only when no key is set, every record carries `data_source` (`SARVAM_LIVE` / `DEMO_FALLBACK` / `MANUAL`), and the citizen and officer screens banner demo and manually-entered records so neither can be certified as a reading of the document.
 - **Live Sarvam AI Integration**: Connected to Sarvam AI Doc AI Extract endpoint (`POST https://api.sarvam.ai/doc-ai/v1/job/extract`).
 - **Verbatim Native Script Preservation**: Extracts names, village, tehsil, district, and survey numbers in their original script (Marathi Devanagari, Hindi, English, etc.) without forced translation (`श्री. चंदन रामचंद्र वाणी`, `मेहरूण`, `जळगाव`).
 - **Strict Role Exclusion Prompting**: Enforces strict LLM schema definitions to exclude Sellers (*लिहून देणार*), Sub-Registrars, Advocates, Witnesses, and Officers from `owner_name` and `co_owners`.

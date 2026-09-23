@@ -86,7 +86,11 @@ def _normalise_owner(name: Any) -> str:
     """Compare people, not titles: 'श्री. चंदन' and 'चंदन' are one person."""
     if name is None:
         return ""
-    text = re.sub(r"\s+", " ", str(name)).strip().lower()
+    # Extraction appends identifiers it finds beside the name — "(PAN: ABPPW
+    # 6957 L)" — which is not part of who the owner is and must not read as a
+    # different claimant.
+    text = re.sub(r"\([^)]*\)", " ", str(name))
+    text = re.sub(r"\s+", " ", text).strip().lower()
     for honorific in _HONORIFICS:
         if text.startswith(honorific + " ") or text.startswith(honorific):
             stripped = text[len(honorific):].strip()
