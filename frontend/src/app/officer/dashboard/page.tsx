@@ -54,7 +54,7 @@ export default function OfficerDashboardPage() {
   const [selectedDistrict, setSelectedDistrict] = useState<string>(officerDistrict);
   const [selectedTehsilFilter, setSelectedTehsilFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [queueFilter, setQueueFilter] = useState<'ALL' | 'URGENT' | 'LOW_CONFIDENCE' | 'CONFLICTS' | 'VERIFIED'>('ALL');
+  const [queueFilter, setQueueFilter] = useState<'ALL' | 'URGENT' | 'LOW_CONFIDENCE' | 'CONFLICTS' | 'DUPLICATES' | 'VERIFIED'>('ALL');
   const [activeTab, setActiveTab] = useState<'queue' | 'geo' | 'analytics'>('queue');
 
   const fetchOfficerQueueFromDb = async () => {
@@ -339,6 +339,7 @@ export default function OfficerDashboardPage() {
         return rec.overallConfidence < 0.75;
       }
       if (queueFilter === 'CONFLICTS') return rec.validationFlags.some(f => f.severity === 'CONFLICT');
+      if (queueFilter === 'DUPLICATES') return rec.validationFlags.some(f => f.id === 'DUPLICATE_RECORD');
       if (queueFilter === 'VERIFIED') return rec.status === 'VERIFIED';
       return true;
     });
@@ -518,6 +519,30 @@ export default function OfficerDashboardPage() {
               placeholder="Search queue by Record ID, Land Owner, Survey Number, or Village..."
               className="w-full pl-10 pr-4 py-2.5 text-xs border border-[#D7D4CA] rounded-xl text-stone-900 placeholder:text-stone-400 bg-[#FAF9F6] focus:bg-white transition-colors"
             />
+          </div>
+
+          {/* Queue filters */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {([
+              ['ALL', 'All'],
+              ['URGENT', 'Urgent'],
+              ['LOW_CONFIDENCE', 'Low Confidence'],
+              ['CONFLICTS', 'Conflicts'],
+              ['DUPLICATES', 'Duplicates'],
+              ['VERIFIED', 'Verified'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setQueueFilter(key)}
+                className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors ${
+                  queueFilter === key
+                    ? 'bg-[#141416] text-white border-[#141416]'
+                    : 'bg-white text-stone-600 border-[#E8E6DF] hover:bg-[#FAF9F6]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {/* Clean Queue Table */}

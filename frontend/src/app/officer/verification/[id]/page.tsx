@@ -213,11 +213,31 @@ export default function OfficerVerificationWorkspacePage() {
 
   const officerName = user?.name || user?.employeeId || 'Officer';
 
+  // The workspace keys its fields camelCase; the audit trail is keyed the way
+  // the database and the citizen rows are, so both sides of a correction line
+  // up under one field name.
+  const AUDIT_FIELD_NAMES: Record<string, string> = {
+    ownerName: 'owner_name',
+    coOwners: 'co_owners',
+    surveyNumber: 'survey_number',
+    khasraNumber: 'khasra_number',
+    khataNumber: 'khata_number',
+    area: 'area',
+    landClassification: 'land_classification',
+    village: 'village',
+    tehsil: 'tehsil',
+    districtState: 'district',
+    mutationNumber: 'mutation_number',
+    registrationInfo: 'registration_info',
+  };
+
   /** Every field the officer typed over, with what the AI had read there. */
   const officerEdits = () => {
     const changes: Record<string, { ai: string; officer: string }> = {};
     Object.entries(fields).forEach(([key, f]) => {
-      if (f.ai !== f.officer) changes[key] = { ai: f.ai, officer: f.officer };
+      if (f.ai !== f.officer) {
+        changes[AUDIT_FIELD_NAMES[key] || key] = { ai: f.ai, officer: f.officer };
+      }
     });
     return changes;
   };

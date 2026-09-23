@@ -237,7 +237,7 @@ export default function OfficerVerifiedHistoryPage() {
                 Official Certified Record of Rights (RoR)
               </h3>
               <p className="text-xs text-stone-500 mt-1">
-                Department of Land Resources Verified &amp; Cryptographically Sealed Database
+                Department of Land Resources Verified &amp; Append-only Sealed Database
               </p>
             </div>
 

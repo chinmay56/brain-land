@@ -35,6 +35,7 @@
 ### D. Backend Architecture & Data Schema
 - **FastAPI Core**: Pydantic models configured with camelCase alias generation for seamless Next.js frontend binding.
 - **Validation Engine**: Business rules engine detecting anomalies (missing survey numbers, low confidence scores, area unit mismatches).
+- **Cross-Database Verification & Duplicate Detection**: Every extraction is checked against the `public.reference_records` RoR master (owner and area discrepancies raised as `REF_OWNER_MISMATCH` / `REF_AREA_MISMATCH`, banded 5–15% warning vs >15% conflict) and against already-submitted records for the same village and survey number (`DUPLICATE_RECORD`, escalated to a competing claim when the owner differs), both degrading to a bundled JSON master and no flags when Supabase is unreachable.
 - **Supabase PostgreSQL & Storage**: Configured for storing document assets and land record data.
 
 ---

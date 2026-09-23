@@ -94,10 +94,34 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 3b. Reference Master (read-only government RoR extract used for cross-verification)
+-- Not a record of applications: this is what the department already holds, and is
+-- what an extracted document is checked against for owner and area discrepancies.
+CREATE TABLE IF NOT EXISTS public.reference_records (
+    id SERIAL PRIMARY KEY,
+    state TEXT NOT NULL,
+    district TEXT,
+    tehsil TEXT,
+    village TEXT NOT NULL,
+    survey_number TEXT NOT NULL,
+    khasra_number TEXT,
+    khata_number TEXT,
+    owner_name TEXT,
+    area NUMERIC,
+    area_unit TEXT,
+    land_classification TEXT,
+    source TEXT DEFAULT 'RoR master 2024',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS reference_records_lookup_idx
+    ON public.reference_records (village, survey_number);
+
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.land_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
 
 -- 5. Row-Level Security Policies:
 CREATE POLICY "Citizens view own records, Officers view all" 
@@ -133,6 +157,12 @@ ON public.audit_logs FOR SELECT USING (true);
 
 CREATE POLICY "Allow system insert audit logs" 
 ON public.audit_logs FOR INSERT WITH CHECK (true);
+
+-- The reference master is read-only to the application: it is maintained by the
+-- department, never written by a citizen submission or an officer action.
+CREATE POLICY "Anyone may read the reference master"
+ON public.reference_records FOR SELECT
+USING (auth.role() = 'authenticated' OR auth.role() = 'anon');
 
 -- 6. Storage Bucket RLS Policies (Strict User Document Isolation)
 -- Users can only upload and read files in their own folder: land-record-documents/{user_id}/*
@@ -175,3 +205,23 @@ INSERT INTO public.land_records (
     'Area sum mismatch detected against parent parcel 112.', 'SDO Pune Haveli'
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 7. Reference Master Seed (generated from app/data/hadapsar_records.json,
+-- plus the two rows the demo documents are checked against).
+INSERT INTO public.reference_records (
+    state, district, tehsil, village, survey_number, khasra_number,
+    khata_number, owner_name, area, area_unit, land_classification, source
+) VALUES
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/1', NULL, 'KH-1023', 'Vikram Ananta Joshi', 2.88, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/3', NULL, 'KH-1025', 'Sunita Devi Deshmukh', 2.34, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2', NULL, 'KH-3140', 'Sunita Devi Deshmukh', 3.12, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2/A', NULL, 'KH-3141', 'Anil Sunil Deshmukh', 1.44, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2/B', NULL, 'KH-3142', 'Kavita Sunil Deshmukh', 0.9, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '125/4', NULL, 'KH-2091', 'Suresh Chandra Kumar', 1.8, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '125/5', NULL, 'KH-2092', 'Ganesh Maruti Shinde', 3.24, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '128/1', NULL, 'KH-0492', 'Amit Sharma', 0.95, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '98/B', NULL, 'KH-0098', 'Ganpat Rao Shinde', 1.95, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '145/3', NULL, 'KH-4501', 'Baburao Tukaram Kale', 1.55, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Jalgaon', 'Jalgaon', 'Mehrun', '486/1', 'Plot No. 23', NULL, 'चंदन रामचंद्र वाणी', 289.25, 'Sq. Meters', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/2', 'K-4821', 'KH-1024', 'Ramesh Baliram Patil', 2.61, 'Hectares', NULL, 'RoR master 2024')
+ON CONFLICT DO NOTHING;

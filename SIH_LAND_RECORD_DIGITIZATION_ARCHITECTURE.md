@@ -15,7 +15,7 @@ This project implements an **end-to-end AI-powered intelligent digitization and 
 3. Applying **strict schema-guided extraction rules** using **Sarvam AI Document Intelligence (`POST /doc-ai/v1/job/extract`)**.
 4. Executing **multi-document smart merging and conflict detection** (e.g. 7/12 Extract + Sale Deed).
 5. Providing **human-in-the-loop verification** with dual-pane comparison for Sub-Divisional Officers (SDO).
-6. Enforcing **Department of Land Resources (DoLR) business validation rules** and maintaining an **immutable cryptographic audit trail**.
+6. Enforcing **Department of Land Resources (DoLR) business validation rules** and maintaining an **immutable append-only audit trail**.
 
 ---
 

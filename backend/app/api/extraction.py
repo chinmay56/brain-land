@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.sarvam_vision import sarvam_service
 from app.services.validation_engine import validation_engine
+from app.services.reference_check import check_duplicates, check_reference
 
 router = APIRouter(prefix="/extraction", tags=["AI Extraction"])
 
@@ -9,6 +10,12 @@ async def extract_from_document(file: UploadFile = File(...)):
     file_bytes = await file.read()
     extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
     validation_flags = validation_engine.validate_extracted_record(extracted_data)
+
+    # Cross-verification against the department's own master, and against
+    # what has already been submitted. Both return [] rather than raising if
+    # their sources are unreachable, so extraction still succeeds offline.
+    validation_flags += check_reference(extracted_data)
+    validation_flags += check_duplicates(extracted_data)
 
     # Where the fields below actually came from. sarvam_vision falls back to
     # built-in fixture data whenever the API key is missing, the key is

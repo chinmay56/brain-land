@@ -37,18 +37,8 @@ class LandRecordValidationEngine:
                 )
             )
 
-        # Rule 3: Reference Database Discrepancy check
-        if survey_field and survey_field.value == "125/4":
-            flags.append(
-                ValidationFlag(
-                    id="VF-03",
-                    field="survey_number",
-                    severity=SeverityLevel.CONFLICT,
-                    message="Survey number 125/4 shows discrepancy with Department Reference Database (listed as 125/7 in 2024 resurvey).",
-                    suggested_action="Check cadastral boundary map and previous mutation history."
-                )
-            )
-
+        # Reference-database discrepancies are a real lookup now — see
+        # reference_check.check_reference, called from the extraction endpoint.
         return flags
 
 validation_engine = LandRecordValidationEngine()
