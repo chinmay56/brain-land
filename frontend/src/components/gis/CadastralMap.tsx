@@ -12,13 +12,18 @@
  * the parcel corners on imagery, those become a coordinates source, and the
  * area declared on the document then cross-checks the trace.
  *
+ * Pin mode is the lighter alternative: one click, not a full boundary. It
+ * anchors a reconstructed shape when the document has one, or — for a plain
+ * 7/12 with no shape at all — is just shown back as an honest "approximate
+ * location", never dressed up as a surveyed parcel.
+ *
  * Load with next/dynamic and { ssr: false } — Leaflet touches `window` at import.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
 import {
   MapContainer, TileLayer, GeoJSON, Circle, Polygon, CircleMarker,
-  LayersControl, useMap, useMapEvents,
+  Tooltip, LayersControl, useMap, useMapEvents,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -40,6 +45,11 @@ interface Props {
   traceMode?: boolean;
   tracePoints?: LonLat[];
   onTraceAdd?: (point: LonLat) => void;
+  pinMode?: boolean;
+  pinPoint?: LonLat | null;
+  onPinSet?: (point: LonLat) => void;
+  /** Geocoded starting point. A hint for the eye only — never a position. */
+  suggested?: { lon: number; lat: number; label: string } | null;
 }
 
 function FitToParcels({ parcels }: { parcels: ParcelCollection | null }) {
@@ -94,6 +104,41 @@ function TraceCollector({
   return null;
 }
 
+function PanToPin({ pin, zoom }: { pin: [number, number] | null; zoom: number }) {
+  const map = useMap();
+  const shown = useRef<string>('');
+  useEffect(() => {
+    if (!pin) return;
+    const key = pin.join(',');
+    if (key === shown.current) return;
+    shown.current = key;
+    map.flyTo(pin, Math.max(map.getZoom(), zoom), { duration: 0.55 });
+  }, [pin, zoom, map]);
+  return null;
+}
+
+/** Collects a single officer click while pin mode is on, then hands it back. */
+function PinCollector({
+  active, onSet,
+}: { active: boolean; onSet?: (p: LonLat) => void }) {
+  const map = useMap();
+
+  useMapEvents({
+    click(e) {
+      if (!active || !onSet) return;
+      onSet([+e.latlng.lng.toFixed(8), +e.latlng.lat.toFixed(8)]);
+    },
+  });
+
+  useEffect(() => {
+    const container = map.getContainer();
+    container.style.cursor = active ? 'crosshair' : '';
+    return () => { container.style.cursor = ''; };
+  }, [active, map]);
+
+  return null;
+}
+
 function ringCentroid(coords: number[][]): [number, number] {
   let x = 0, y = 0;
   for (const [lon, lat] of coords) { x += lon; y += lat; }
@@ -104,6 +149,7 @@ function ringCentroid(coords: number[][]): [number, number] {
 export default function CadastralMap({
   parcels, selectedSurveyNo, onSelect, showUncertainty, accuracyFilter,
   traceMode = false, tracePoints = [], onTraceAdd,
+  pinMode = false, pinPoint = null, onPinSet, suggested = null,
 }: Props) {
   const visible = useMemo<ParcelCollection | null>(() => {
     if (!parcels) return null;
@@ -163,6 +209,9 @@ export default function CadastralMap({
 
   // Leaflet wants [lat, lng]; our trace points are [lon, lat].
   const traceLatLngs = tracePoints.map(([lon, lat]) => [lat, lon] as [number, number]);
+  const pinLatLng = pinPoint ? ([pinPoint[1], pinPoint[0]] as [number, number]) : null;
+  const suggestedLatLng = suggested
+    ? ([suggested.lat, suggested.lon] as [number, number]) : null;
 
   return (
     <MapContainer
@@ -225,9 +274,60 @@ export default function CadastralMap({
         />
       ))}
 
+      {/* The geocoded suggestion. Deliberately large, faint and grey-blue: it
+          marks an area to look in, and must read as "somewhere around here",
+          never as a parcel or a confirmed position. */}
+      {suggestedLatLng && !pinLatLng && (
+        <Circle
+          center={suggestedLatLng}
+          radius={400}
+          pathOptions={{ color: '#64748b', weight: 1.5, dashArray: '6 6',
+                         fillColor: '#94a3b8', fillOpacity: 0.10 }}
+        >
+          <Tooltip direction="top" opacity={0.97}>
+            Suggested starting point — {suggested!.label}
+            <br />
+            <span style={{ color: '#b45309' }}>
+              Unconfirmed (OpenStreetMap). Drop a pin or trace to set the real position.
+            </span>
+          </Tooltip>
+        </Circle>
+      )}
+
+      {/* The officer-placed anchor pin: dashed ring around a solid centre,
+          deliberately not styled like a surveyed parcel — it is a guess at a
+          location, not a measured boundary. */}
+      {pinLatLng && (
+        <>
+          <Circle
+            center={pinLatLng}
+            radius={25}
+            pathOptions={{ color: '#e11d48', weight: 1.5, dashArray: '4 4',
+                           fillColor: '#fb7185', fillOpacity: 0.12 }}
+          />
+          <CircleMarker
+            center={pinLatLng}
+            radius={7}
+            pathOptions={{ color: '#141416', weight: 2, fillColor: '#e11d48', fillOpacity: 1 }}
+          >
+            <Tooltip direction="top" offset={[0, -8]} opacity={0.97}>
+              Officer-placed anchor — approximate location, not a surveyed boundary
+            </Tooltip>
+          </CircleMarker>
+        </>
+      )}
+
       <TraceCollector active={traceMode} onAdd={onTraceAdd} />
+      <PinCollector active={pinMode} onSet={onPinSet} />
       <FitToParcels parcels={visible} />
       <PanToSelected parcels={parcels} selectedSurveyNo={selectedSurveyNo} />
+      {/* A real pin outranks a guess, so only fly to the suggestion while
+          nothing has actually been placed yet. The guess gets village zoom,
+          a placed pin gets parcel zoom. */}
+      <PanToPin
+        pin={pinLatLng ?? (visible?.features.length ? null : suggestedLatLng)}
+        zoom={pinLatLng ? 17 : 15}
+      />
     </MapContainer>
   );
 }

@@ -1,22 +1,44 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
+/**
+ * Gate for the officer console.
+ *
+ * The previous version only blocked callers whose role was literally
+ * 'CITIZEN', so a visitor with no session at all fell straight through the
+ * check and was handed the verification queue, the GIS editor and the audit
+ * log. Anyone who is not a signed-in officer now goes to the login page.
+ *
+ * This is a convenience, not the control: the API refuses the same requests
+ * on its own, because a client-side redirect protects nothing.
+ */
+
+import React, { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { GovernmentHeader } from '@/components/common/GovernmentHeader';
 import { Sidebar } from '@/components/common/Sidebar';
 import { BackendWarmup } from '@/components/common/BackendWarmup';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldAlert, ArrowRight, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
-export default function OfficerLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { user, role, loginOfficer } = useAuth();
+export default function OfficerLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { user, role, isLoading } = useAuth();
+  const isOfficer = !isLoading && user !== null && role === 'OFFICER';
 
-  // If not logged in as Officer, provide quick demo unlock or redirect prompt
-  const isOfficer = role === 'OFFICER' && user !== null;
+  useEffect(() => {
+    if (!isLoading && !isOfficer) router.replace('/officer-login');
+  }, [isLoading, isOfficer, router]);
+
+  if (isLoading || !isOfficer) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FBFBFA] gap-3">
+        <Loader2 className="w-5 h-5 animate-spin text-stone-400" />
+        <p className="text-xs text-stone-500">
+          {isLoading ? 'Checking your session…' : 'Officer sign-in required. Redirecting…'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FBFBFA]">
@@ -26,44 +48,7 @@ export default function OfficerLayout({
       <div className="flex-1 flex w-full">
         <Sidebar />
         <main className="flex-1 p-6 lg:p-8 min-w-0 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
-            {!isOfficer && user?.role === 'CITIZEN' ? (
-              <div className="bg-white border-2 border-stone-800 rounded-2xl p-8 shadow-stone-lg text-center space-y-4 max-w-lg mx-auto my-12">
-                <div className="w-12 h-12 rounded-2xl bg-[#141416] text-white flex items-center justify-center mx-auto shadow-stone-sm">
-                  <Lock className="w-6 h-6 text-terracotta-400" />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-[11px] font-bold text-terracotta-700 uppercase tracking-wider">
-                    Official Clearance Required
-                  </div>
-                  <h2 className="text-xl font-bold text-stone-950 font-serif">
-                    Sub-Divisional Officer (SDO) Portal
-                  </h2>
-                  <p className="text-xs text-stone-600 leading-relaxed">
-                    You are currently signed in as a <strong>Land Owner / Citizen</strong>. The Verification Console, GIS Parcel Editor, and Audit Logs are restricted to authorized Revenue Officers.
-                  </p>
-                </div>
-
-                <div className="pt-2 flex flex-col gap-2">
-                  <Link
-                    href="/officer-login"
-                    className="w-full bg-[#141416] hover:bg-stone-800 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow-stone-sm transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>Sign In with Officer Credentials</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-terracotta-400" />
-                  </Link>
-                  <Link
-                    href="/citizen/dashboard"
-                    className="text-stone-700 hover:text-stone-950 text-xs font-semibold py-1.5"
-                  >
-                    ← Return to Citizen Dashboard
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              children
-            )}
-          </div>
+          <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
     </div>

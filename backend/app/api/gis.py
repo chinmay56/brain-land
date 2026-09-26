@@ -14,6 +14,10 @@ import json
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
+from fastapi import Depends
+
+from app.core.auth import require_officer
 from pydantic import BaseModel, Field
 
 from app.services import crs_india as crs
@@ -369,7 +373,8 @@ def _closed(ring):
 
 
 @router.post("/plot", summary="Plot parcels from extracted land documents")
-async def plot(request: PlotRequest) -> Dict[str, Any]:
+async def plot(request: PlotRequest,
+               officer: Dict[str, Any] = Depends(require_officer)) -> Dict[str, Any]:
     """
     The main entry point. Give it extracted documents, get GeoJSON back.
 
@@ -391,6 +396,7 @@ async def upload(
                                              '{"documents": [...]}'),
     assemble: bool = Query(True),
     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+    officer: Dict[str, Any] = Depends(require_officer),
 ) -> Dict[str, Any]:
     """
     File-upload flavour, so the front end can offer a drop zone while the OCR
@@ -427,7 +433,8 @@ async def upload(
 
 @router.post("/parcel", summary="Geometry for one document, in full detail")
 async def one_parcel(document: DocumentIn,
-                     area_tolerance_pct: float = Query(2.0, gt=0, le=50)
+                     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+                     officer: Dict[str, Any] = Depends(require_officer),
                      ) -> Dict[str, Any]:
     """Everything the engine derived from a single document, including the local
     ring, the closure report and every flag — useful for debugging an extraction."""
@@ -436,6 +443,31 @@ async def one_parcel(document: DocumentIn,
     except (sm.UnitError, crs.CRSError) as exc:
         raise HTTPException(422, str(exc))
     return result.to_dict()
+
+
+@router.get("/suggest-location", summary="Best-effort map starting point for a village name")
+async def suggest_location(
+    village: str = Query(..., description="Village name as extracted from the document."),
+    tehsil: str = Query("", description="Tehsil / taluka, improves match accuracy."),
+    district: str = Query("", description="District, improves match accuracy."),
+    state: str = Query("Maharashtra"),
+) -> Dict[str, Any]:
+    """
+    Geocodes a village name via OpenStreetMap Nominatim, purely so the map can
+    open zoomed to roughly the right place instead of a blank view of India.
+
+    This is NOT a cadastral centroid and is never fed into the geometry
+    pipeline — `found: false` is a completely normal answer (an unmatched or
+    misspelt village name, or no network) and the officer traces or pins the
+    parcel exactly as before. See village_locator.py for why this exists
+    separately from the surveyed/reconstructed geometry in document_geometry.py.
+    """
+    from app.services.village_locator import suggest_location as geocode
+
+    hit = await geocode(village, tehsil, district, state)
+    if hit is None:
+        return {"found": False}
+    return {"found": True, **hit}
 
 
 @router.post("/sample", summary="A worked example you can plot immediately")
@@ -462,7 +494,18 @@ async def plot_document(
         None, description='Officer-traced corners as JSON: [[lon,lat],[lon,lat],…]. '
                           'Supply on the second call, after the officer has drawn '
                           'the parcel on imagery.'),
+    pin: Optional[str] = Form(
+        None, description='A single officer-placed anchor point as JSON [lon,lat]. '
+                          'Use when the officer can point at roughly where the parcel '
+                          'is but cannot yet trace its full boundary. If the document '
+                          'also carries a reconstructed shape (traverse or chain-offset), '
+                          'this one point is enough to place that shape on the ground '
+                          '(rotation is then assumed true north). If the document has '
+                          'no shape at all, the pin is returned as `officer_pin` so it '
+                          'can still be shown on the map as an approximate location. '
+                          'Ignored if `trace` is also supplied.'),
     area_tolerance_pct: float = Query(2.0, gt=0, le=50),
+    officer: Dict[str, Any] = Depends(require_officer),
 ) -> Dict[str, Any]:
     """
     The end-to-end path. Runs the real extraction stage on an uploaded scan,
@@ -473,7 +516,9 @@ async def plot_document(
     back with the fields extracted and `needs_position` set — that is correct,
     not a failure. Call again with `trace` once the officer has marked the parcel
     corners on imagery, and the parcel plots with its declared area cross-checking
-    the trace.
+    the trace. If a full trace is not available yet, `pin` accepts a single
+    officer-placed point instead — enough to anchor a reconstructed shape, or to
+    at least mark the approximate location on the map.
 
     The response always reports `data_source`, so a demo can never silently show
     fixture data as though it were a live extraction.
@@ -485,10 +530,28 @@ async def plot_document(
     if not raw:
         raise HTTPException(400, "Uploaded file is empty.")
 
+    from app.services.sarvam_vision import ExtractionError
+
+    # JSONResponse rather than HTTPException: the latter nests the body under
+    # "detail", and this must match /api/extraction/process exactly.
     try:
         extracted = await sarvam_service.extract_land_record(raw, file.filename or "record.pdf")
+    except ExtractionError as exc:
+        return JSONResponse(status_code=502, content={
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": exc.reason,
+            "retryable": exc.retryable,
+            "http_status": exc.http_status,
+        })
     except Exception as exc:                                  # pragma: no cover
-        raise HTTPException(502, f"Extraction stage failed: {type(exc).__name__}: {exc}")
+        return JSONResponse(status_code=502, content={
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": f"Extraction stage failed: {type(exc).__name__}: {exc}",
+            "retryable": True,
+            "http_status": None,
+        })
 
     data_source = extracted.get("data_source", "UNKNOWN")
 
@@ -509,6 +572,28 @@ async def plot_document(
         if not isinstance(traced_points, list) or len(traced_points) < 3:
             raise HTTPException(400, "A traced parcel needs at least 3 corners.")
         document["coordinates"] = {"points": traced_points, "crs": "WGS84", "order": "xy"}
+
+    # A single officer-placed pin. Only used when there is no full trace: a
+    # trace is a real boundary and always wins over one approximate point.
+    pin_point: Optional[List[float]] = None
+    if pin and not traced_points:
+        try:
+            pin_point = json.loads(pin)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"`pin` is not valid JSON: {exc}")
+        if not isinstance(pin_point, list) or len(pin_point) != 2:
+            raise HTTPException(400, "`pin` must be [lon, lat].")
+        lon, lat = float(pin_point[0]), float(pin_point[1])
+        problems = crs.validate_lonlat(lon, lat)
+        if problems:
+            raise HTTPException(400, "; ".join(problems))
+        # local=[0,0]: with no shape reconstructed yet the local frame is
+        # arbitrary, so the origin is as good a place as any to hang the pin.
+        # Once a traverse/chain-offset shape exists, _place() uses this single
+        # control point to fix its position (rotation assumed true north).
+        document["control_points"] = [
+            {"lon": lon, "lat": lat, "local": [0.0, 0.0], "label": "officer-pin"}
+        ]
 
     try:
         doc_in = DocumentIn(**document)
@@ -536,22 +621,81 @@ async def plot_document(
         "fields": {
             key: {"value": _plain(value), "confidence": _conf(value)}
             for key, value in extracted.items()
+            # Geometry is nested structure, not a text field — stringifying it
+            # into the fields panel would print a dict at the officer.
             if key not in ("overall_confidence", "document_pages", "data_source",
-                           "co_owners", "boundaries")
+                           "co_owners", "boundaries", "chain_offset", "traverse",
+                           "learning")
         },
         "co_owners": extracted.get("co_owners") or [],
         "boundaries": document.get("boundaries", {}),
+        "geometry_source": _geometry_summary(extracted),
         "overall_confidence": extracted.get("overall_confidence"),
         "pages": extracted.get("document_pages"),
     }
     result["adapter_notes"] = notes
     result["needs_position"] = result["summary"]["plotted"] == 0
-    result["next_step"] = (
-        None if result["summary"]["plotted"]
-        else "This document type carries no geometry. Ask the officer to trace the "
-             "parcel corners on imagery, then POST again with `trace`."
-    )
+
+    # A tippan that only lacks an anchor is a completely different situation
+    # from a 7/12 that has no measurements at all, and the officer is asked to
+    # do a different thing in each case: one pin places an exact boundary,
+    # whereas a shapeless record needs its corners traced by hand.
+    has_shape = any(u.get("accuracy_class") == "reconstructed_floating"
+                    for u in result["unplaced"])
+    result["has_reconstructed_shape"] = has_shape
+
+    if result["summary"]["plotted"]:
+        result["next_step"] = None
+    elif has_shape:
+        result["next_step"] = (
+            "The measurements on this document give its exact shape and area — only "
+            "its position on the ground is missing. Drop a single pin on the parcel "
+            "and the boundary will be placed there."
+        )
+    elif pin_point:
+        # The pin didn't anchor anything because there was no reconstructed
+        # shape to place — most 7/12s. Hand it back anyway so the map can show
+        # where the officer says the parcel is, honestly labelled as a pin and
+        # not a surveyed boundary.
+        result["officer_pin"] = {"lon": pin_point[0], "lat": pin_point[1]}
+        result["next_step"] = (
+            "This document carries no reconstructable shape (no traverse or "
+            "chain-offset ladder), so the pin is shown as an approximate location "
+            "only. Trace the parcel corners on imagery for a real boundary."
+        )
+    else:
+        result["next_step"] = (
+            "This document type carries no geometry. Ask the officer to trace the "
+            "parcel corners on imagery, or drop a single pin for an approximate "
+            "position, then POST again with `trace` or `pin`."
+        )
     return result
+
+
+def _geometry_summary(extracted: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    What measurements, if any, the extraction found — so the officer can see at
+    a glance whether this document carried a real boundary or only text.
+    """
+    ladder = extracted.get("chain_offset")
+    if isinstance(ladder, dict):
+        return {
+            "kind": "chain_offset",
+            "label": "Tippan ladder (chain & offset)",
+            "detail": (f"{len(ladder.get('offsets') or [])} offsets along a "
+                       f"{ladder.get('base_length')} {ladder.get('unit', 'links')} base line"
+                       + ("" if ladder.get("base_bearing") is None
+                          else f", bearing {ladder['base_bearing']}°")),
+        }
+    traverse = extracted.get("traverse")
+    if isinstance(traverse, dict):
+        return {
+            "kind": "traverse",
+            "label": "Traverse (bearings & distances)",
+            "detail": (f"{len(traverse.get('legs') or [])} legs in "
+                       f"{traverse.get('distance_unit', 'm')}"),
+        }
+    return None
 
 
 def _plain(field: Any) -> Optional[str]:

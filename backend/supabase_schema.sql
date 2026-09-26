@@ -3,16 +3,46 @@
 -- Smart India Hackathon 2026 • Problem Statement 26018
 -- ==============================================================================
 
--- 1. Profiles Table (Users: Citizens & SDO Officers)
+-- 1. Profiles Table (Users: Citizens, Revenue Officers & Admins)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     role VARCHAR(20) NOT NULL CHECK (role IN ('CITIZEN', 'OFFICER', 'ADMIN')),
     full_name TEXT NOT NULL,
     phone_number VARCHAR(15),
     designation TEXT,
-    district TEXT,
+    employee_id TEXT,
+    district TEXT, -- Assigned Jurisdiction District for OFFICERS & ADMINS (NULL for CITIZENS)
+    tehsil TEXT,   -- Assigned Jurisdiction Tehsil for OFFICERS & ADMINS (NULL for CITIZENS)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Automatic Profile Creation Trigger on Supabase Auth User Signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, role, full_name, phone_number, designation, employee_id, district, tehsil)
+    VALUES (
+        new.id,
+        'CITIZEN',   -- never from raw_user_meta_data: the caller controls that
+        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+        new.raw_user_meta_data->>'phone_number',
+        new.raw_user_meta_data->>'designation',
+        new.raw_user_meta_data->>'employeeId',
+        new.raw_user_meta_data->>'district',
+        new.raw_user_meta_data->>'tehsil'
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        full_name = EXCLUDED.full_name;   -- never role
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
 
 -- 2. Land Records Table (Supporting all 12 SIH Fields)
 CREATE TABLE IF NOT EXISTS public.land_records (
@@ -49,6 +79,12 @@ CREATE TABLE IF NOT EXISTS public.land_records (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Columns the application writes that are not in the original table
+-- definition. Kept as ALTERs so this file stays safe to re-run.
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS data_source TEXT;
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS lgd_district_code TEXT;
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS lgd_tehsil_code TEXT;
+
 -- 3. Immutable Audit Logs Table
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -61,45 +97,121 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Provenance of the field values on a record: SARVAM_LIVE (read from the
+-- document), DEMO_FALLBACK (built-in fixture, no key configured) or MANUAL
+-- (typed by the citizen). An officer must be able to see which before certifying.
+ALTER TABLE public.land_records ADD COLUMN IF NOT EXISTS data_source TEXT;
+
+-- 3b. Reference Master (read-only government RoR extract used for cross-verification)
+-- Not a record of applications: this is what the department already holds, and is
+-- what an extracted document is checked against for owner and area discrepancies.
+CREATE TABLE IF NOT EXISTS public.reference_records (
+    id SERIAL PRIMARY KEY,
+    state TEXT NOT NULL,
+    district TEXT,
+    tehsil TEXT,
+    village TEXT NOT NULL,
+    survey_number TEXT NOT NULL,
+    khasra_number TEXT,
+    khata_number TEXT,
+    owner_name TEXT,
+    area NUMERIC,
+    area_unit TEXT,
+    land_classification TEXT,
+    source TEXT DEFAULT 'RoR master 2024',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS reference_records_lookup_idx
+    ON public.reference_records (village, survey_number);
+
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.land_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reference_records ENABLE ROW LEVEL SECURITY;
 
--- 5. Row-Level Security Policies:
-CREATE POLICY "Citizens view own records, Officers view all" 
-ON public.land_records FOR SELECT 
+-- 5. Row-Level Security Policies
+-- No policy below grants anything to `anon`. An unauthenticated caller can
+-- read nothing. See migrations/001_rbac_and_secure_storage.sql for the
+-- re-runnable version of this section.
+
+-- SECURITY DEFINER so that a policy on profiles can ask about profiles without
+-- recursing through its own RLS.
+CREATE OR REPLACE FUNCTION public.is_officer()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid() AND role = 'OFFICER'
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_officer() FROM public;
+GRANT EXECUTE ON FUNCTION public.is_officer() TO authenticated, anon, service_role;
+
+CREATE POLICY "Users read own profile, officers read all"
+ON public.profiles FOR SELECT
+USING (id = auth.uid() OR public.is_officer());
+
+CREATE POLICY "Users update own profile"
+ON public.profiles FOR UPDATE
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
+
+CREATE POLICY "Citizens view own records, Officers view all"
+ON public.land_records FOR SELECT
+USING (created_by = auth.uid() OR public.is_officer());
+
+CREATE POLICY "Citizens can insert their own records"
+ON public.land_records FOR INSERT
+WITH CHECK (created_by = auth.uid());
+
+CREATE POLICY "Officers can update verification status & remarks"
+ON public.land_records FOR UPDATE
+USING (public.is_officer())
+WITH CHECK (public.is_officer());
+
+CREATE POLICY "Officers read all audit logs, citizens read their own"
+ON public.audit_logs FOR SELECT
 USING (
-    auth.uid() = created_by 
+    public.is_officer()
     OR EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND role = 'OFFICER'
+        SELECT 1 FROM public.land_records lr
+        WHERE lr.id = audit_logs.record_id AND lr.created_by = auth.uid()
     )
-    OR auth.role() = 'anon' -- Development fallback
 );
 
-CREATE POLICY "Citizens can insert their own records" 
-ON public.land_records FOR INSERT 
-WITH CHECK (
-    auth.uid() = created_by 
-    OR auth.role() = 'anon'
-);
+CREATE POLICY "Authenticated users append audit logs"
+ON public.audit_logs FOR INSERT
+WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Officers can update verification status & remarks" 
-ON public.land_records FOR UPDATE 
+CREATE POLICY "Authenticated users read the reference master"
+ON public.reference_records FOR SELECT
+USING (auth.role() = 'authenticated');
+
+-- 6. Storage Bucket RLS (Strict User Document Isolation)
+-- The bucket is private; documents are served through short-lived signed URLs.
+CREATE POLICY "Users access own document folder, Officers access all"
+ON storage.objects FOR ALL
 USING (
-    EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND role = 'OFFICER'
+    bucket_id = 'land-record-documents'
+    AND (
+        (storage.foldername(name))[1] = auth.uid()::text
+        OR public.is_officer()
     )
-    OR auth.role() = 'anon'
+)
+WITH CHECK (
+    bucket_id = 'land-record-documents'
+    AND (
+        (storage.foldername(name))[1] = auth.uid()::text
+        OR public.is_officer()
+    )
 );
-
-CREATE POLICY "Public read audit logs for verification" 
-ON public.audit_logs FOR SELECT USING (true);
-
-CREATE POLICY "Allow system insert audit logs" 
-ON public.audit_logs FOR INSERT WITH CHECK (true);
 
 -- 6. Insert Mock Records for Immediate Demo
 INSERT INTO public.land_records (
@@ -126,3 +238,23 @@ INSERT INTO public.land_records (
     'Area sum mismatch detected against parent parcel 112.', 'SDO Pune Haveli'
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 7. Reference Master Seed (generated from app/data/hadapsar_records.json,
+-- plus the two rows the demo documents are checked against).
+INSERT INTO public.reference_records (
+    state, district, tehsil, village, survey_number, khasra_number,
+    khata_number, owner_name, area, area_unit, land_classification, source
+) VALUES
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/1', NULL, 'KH-1023', 'Vikram Ananta Joshi', 2.88, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/3', NULL, 'KH-1025', 'Sunita Devi Deshmukh', 2.34, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2', NULL, 'KH-3140', 'Sunita Devi Deshmukh', 3.12, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2/A', NULL, 'KH-3141', 'Anil Sunil Deshmukh', 1.44, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '131/2/B', NULL, 'KH-3142', 'Kavita Sunil Deshmukh', 0.9, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '125/4', NULL, 'KH-2091', 'Suresh Chandra Kumar', 1.8, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '125/5', NULL, 'KH-2092', 'Ganesh Maruti Shinde', 3.24, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '128/1', NULL, 'KH-0492', 'Amit Sharma', 0.95, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '98/B', NULL, 'KH-0098', 'Ganpat Rao Shinde', 1.95, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '145/3', NULL, 'KH-4501', 'Baburao Tukaram Kale', 1.55, 'Hectares', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Jalgaon', 'Jalgaon', 'Mehrun', '486/1', 'Plot No. 23', NULL, 'चंदन रामचंद्र वाणी', 289.25, 'Sq. Meters', NULL, 'RoR master 2024'),
+    ('Maharashtra', 'Pune', 'Haveli', 'Hadapsar', '124/2', 'K-4821', 'KH-1024', 'Ramesh Baliram Patil', 2.61, 'Hectares', NULL, 'RoR master 2024')
+ON CONFLICT DO NOTHING;

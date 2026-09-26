@@ -1,343 +1,214 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+/**
+ * Who is signed in.
+ *
+ * Two things used to make this decorative. When Supabase Auth failed for any
+ * reason the app invented a user locally and carried on, so a wrong password
+ * still produced a working session; and the role was read from
+ * user_metadata, which the account holder sets at signUp, so a citizen could
+ * register themselves as an OFFICER. Both are gone.
+ *
+ * Sign-in is Supabase signInWithPassword and nothing else. Role and
+ * jurisdiction are read from public.profiles, a table the user cannot write
+ * to, and the same row the backend consults when deciding what to allow.
+ */
+
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserProfile, UserRole } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
+import { AUTH_EXPIRED_EVENT } from '@/lib/apiFetch';
 
 interface AuthContextType {
   user: UserProfile | null;
   role: UserRole;
   isLoading: boolean;
-  loginCitizen: (emailOrPhone: string, passwordOrOtp?: string) => Promise<{ success: boolean; error?: string }>;
-  loginOfficer: (employeeIdOrEmail: string, password?: string, pin?: string) => Promise<{ success: boolean; error?: string }>;
-  registerCitizen: (data: Partial<UserProfile> & { email?: string; password?: string }) => Promise<{ success: boolean; error?: string }>;
-  switchRole: (role: UserRole) => void;
+  loginCitizen: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  loginOfficer: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  registerCitizen: (
+    data: Partial<UserProfile> & { email?: string; password?: string },
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+type ProfileRow = {
+  role?: string;
+  full_name?: string;
+  phone_number?: string;
+  designation?: string;
+  employee_id?: string;
+  district?: string;
+  tehsil?: string;
+};
+
+/**
+ * The profile row is the authority on role. A missing row means no
+ * privileges — never assumed ones.
+ */
+async function profileFor(userId: string, email?: string | null): Promise<UserProfile | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('role, full_name, phone_number, designation, employee_id, district, tehsil')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.warn('Could not read profile:', error.message);
+    return null;
+  }
+  const row = (data || {}) as ProfileRow;
+  return {
+    id: userId,
+    email: email || undefined,
+    name: row.full_name || email?.split('@')[0] || 'User',
+    role: (row.role === 'OFFICER' ? 'OFFICER' : 'CITIZEN') as UserRole,
+    phone: row.phone_number || '',
+    designation: row.designation || undefined,
+    employeeId: row.employee_id || undefined,
+    district: row.district || '',
+    tehsil: row.tehsil || '',
+    state: 'Maharashtra',
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [role, setRole] = useState<UserRole>('CITIZEN');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Sync Supabase Auth Session or Local Active Session on Mount
-  useEffect(() => {
-    async function loadUserSession() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          const userMeta = session.user.user_metadata || {};
-          const userRole = (userMeta.role as UserRole) || 'CITIZEN';
-          
-          setUser({
-            id: session.user.id,
-            name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'Land Owner',
-            role: userRole,
-            email: session.user.email,
-            phone: userMeta.phone_number || userMeta.phone || '',
-            aadhaarLast4: userMeta.aadhaarLast4 || '',
-            state: userMeta.state || 'Maharashtra',
-            district: userMeta.district || '',
-            tehsil: userMeta.tehsil || '',
-            village: userMeta.village || '',
-            employeeId: userMeta.employeeId,
-            designation: userMeta.designation,
-          });
-          setRole(userRole);
-        } else {
-          // Check if there is an active logged-in citizen session saved from registration
-          const activeSessionJson = localStorage.getItem('ilrds_active_session');
-          if (activeSessionJson) {
-            const parsed = JSON.parse(activeSessionJson);
-            setUser(parsed);
-            setRole(parsed.role || 'CITIZEN');
-          } else {
-            setUser(null);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading session:', err);
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
+  const applySession = useCallback(async (session: any | null) => {
+    if (!session?.user) {
+      setUser(null);
+      setRole('CITIZEN');
+      return;
     }
-
-    loadUserSession();
-
-    // Listen for real-time Auth State Changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const userMeta = session.user.user_metadata || {};
-        const userRole = (userMeta.role as UserRole) || 'CITIZEN';
-        const activeUser: UserProfile = {
-          id: session.user.id,
-          name: userMeta.full_name || userMeta.name || session.user.email?.split('@')[0] || 'Land Owner',
-          role: userRole,
-          email: session.user.email,
-          phone: userMeta.phone_number || userMeta.phone || '',
-          aadhaarLast4: userMeta.aadhaarLast4 || '',
-          state: userMeta.state || 'Maharashtra',
-          district: userMeta.district || '',
-          tehsil: userMeta.tehsil || '',
-          village: userMeta.village || '',
-          employeeId: userMeta.employeeId,
-          designation: userMeta.designation,
-        };
-        setUser(activeUser);
-        setRole(userRole);
-        localStorage.setItem('ilrds_active_session', JSON.stringify(activeUser));
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    const profile = await profileFor(session.user.id, session.user.email);
+    if (!profile) {
+      // Authenticated but unknown to the application. Signing out is safer
+      // than granting a default identity.
+      await supabase.auth.signOut();
+      setUser(null);
+      setRole('CITIZEN');
+      return;
+    }
+    setUser(profile);
+    setRole(profile.role);
   }, []);
 
-  // 1. Citizen Login
-  const loginCitizen = async (emailOrPhone: string, passwordOrOtp = 'password123'): Promise<{ success: boolean; error?: string }> => {
-    let email = emailOrPhone.trim();
-    if (!email.includes('@')) {
-      const cleanPhone = emailOrPhone.replace(/[^0-9]/g, '');
-      if (!cleanPhone) {
-        return { success: false, error: 'Please enter a valid email address or mobile number' };
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (active) {
+        await applySession(data?.session ?? null);
+        setIsLoading(false);
       }
-      email = `citizen_${cleanPhone}@gmail.com`;
-    }
+    })();
 
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: passwordOrOtp,
-      });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      void applySession(session);
+    });
 
-      if (data?.user) {
-        const userMeta = data.user.user_metadata || {};
-        const newUser: UserProfile = {
-          id: data.user.id,
-          name: userMeta.full_name || email.split('@')[0],
-          role: 'CITIZEN',
-          email: data.user.email,
-          phone: userMeta.phone_number || emailOrPhone,
-          aadhaarLast4: userMeta.aadhaarLast4 || '',
-          state: userMeta.state || 'Maharashtra',
-          district: userMeta.district || '',
-          tehsil: userMeta.tehsil || '',
-          village: userMeta.village || '',
-        };
-        setUser(newUser);
-        setRole('CITIZEN');
-        localStorage.setItem('ilrds_active_session', JSON.stringify(newUser));
-        return { success: true };
-      }
-
-      // If user was created locally during rate limit, allow matching email login
-      const localActive = localStorage.getItem('ilrds_active_session');
-      if (localActive) {
-        const parsed = JSON.parse(localActive);
-        if (parsed.email === email || parsed.phone === emailOrPhone) {
-          setUser(parsed);
-          setRole('CITIZEN');
-          return { success: true };
-        }
-      }
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-    } catch (e: any) {
-      console.warn('Supabase Auth error:', e);
-      return { success: false, error: e?.message || 'Authentication failed' };
-    }
-
-    return { success: true };
-  };
-
-  // 2. Revenue Officer Login
-  const loginOfficer = async (employeeIdOrEmail: string, password = 'admin@revenue2026', pin = '8912'): Promise<{ success: boolean; error?: string }> => {
-    let email = employeeIdOrEmail.trim();
-    if (!email.includes('@')) {
-      const cleanId = employeeIdOrEmail.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!cleanId) {
-        return { success: false, error: 'Please enter a valid officer employee ID' };
-      }
-      email = `officer_${cleanId}@gmail.com`;
-    }
-
-    try {
-      let { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: password || 'admin@revenue2026',
-      });
-
-      if (error && (error.message.includes('Invalid login credentials') || error.message.includes('User not found'))) {
-        const signUpRes = await supabase.auth.signUp({
-          email,
-          password: password || 'admin@revenue2026',
-          options: {
-            data: {
-              full_name: 'Shri Vikramaditya Joshi',
-              employeeId: employeeIdOrEmail || 'REV-MH-PN-4091',
-              designation: 'Sub-Divisional Revenue Officer (SDO)',
-              role: 'OFFICER',
-              district: 'Pune',
-              tehsil: 'Haveli',
-            }
-          }
-        });
-
-        if (signUpRes.data.user) {
-          data = { user: signUpRes.data.user, session: signUpRes.data.session as any };
-          error = null;
-        }
-      }
-
-      if (data?.user) {
-        const userMeta = data.user.user_metadata || {};
-        const newOfficer: UserProfile = {
-          id: data.user.id,
-          name: userMeta.full_name || 'Shri Vikramaditya Joshi',
-          role: 'OFFICER',
-          email: data.user.email,
-          employeeId: userMeta.employeeId || employeeIdOrEmail,
-          designation: userMeta.designation || 'Sub-Divisional Revenue Officer (SDO)',
-          district: userMeta.district || 'Pune',
-          tehsil: userMeta.tehsil || 'Haveli',
-          state: userMeta.state || 'Maharashtra',
-        };
-        setUser(newOfficer);
-        setRole('OFFICER');
-        localStorage.setItem('ilrds_active_session', JSON.stringify(newOfficer));
-        return { success: true };
-      }
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-    } catch (e: any) {
-      console.warn('Supabase Officer Auth error:', e);
-      return { success: false, error: e?.message || 'Officer login failed' };
-    }
-
-    return { success: true };
-  };
-
-  // 3. Citizen Registration (Handles Supabase Auth & Graceful Rate Limit Bypass)
-  const registerCitizen = async (formData: Partial<UserProfile> & { email?: string; password?: string }): Promise<{ success: boolean; error?: string }> => {
-    let email = (formData.email || '').trim();
-    const cleanPhone = (formData.phone || '').replace(/[^0-9]/g, '');
-    
-    if (!email) {
-      if (cleanPhone) {
-        email = `citizen_${cleanPhone}@gmail.com`;
-      } else {
-        return { success: false, error: 'Please provide a valid email address' };
-      }
-    }
-
-    const password = formData.password || 'password123';
-    const fullName = formData.name || 'Land Owner';
-
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            phone_number: cleanPhone,
-            role: 'CITIZEN',
-            district: formData.district || 'Pune',
-            tehsil: formData.tehsil || 'Haveli',
-            village: formData.village || 'Hadapsar',
-            aadhaarLast4: formData.aadhaarLast4 || '',
-            state: formData.state || 'Maharashtra',
-          }
-        }
-      });
-
-      // If rate limited by Supabase email service, or user created:
-      const registeredUser: UserProfile = {
-        id: data?.user?.id || `usr_${Date.now()}`,
-        name: fullName,
-        role: 'CITIZEN',
-        email: email,
-        phone: cleanPhone,
-        aadhaarLast4: formData.aadhaarLast4 || '',
-        state: formData.state || 'Maharashtra',
-        district: formData.district || 'Pune',
-        tehsil: formData.tehsil || 'Haveli',
-        village: formData.village || 'Hadapsar',
-      };
-
-      if (error) {
-        console.warn('Supabase Sign Up Notice:', error.message);
-        // If it's a rate limit error, we still successfully create the authenticated session locally
-        if (error.message.toLowerCase().includes('rate limit')) {
-          setUser(registeredUser);
-          setRole('CITIZEN');
-          localStorage.setItem('ilrds_active_session', JSON.stringify(registeredUser));
-          return { success: true };
-        }
-        return { success: false, error: error.message };
-      }
-
-      if (data?.user) {
-        setUser(registeredUser);
-        setRole('CITIZEN');
-        localStorage.setItem('ilrds_active_session', JSON.stringify(registeredUser));
-        return { success: true };
-      }
-    } catch (e: any) {
-      console.warn('Supabase Sign Up exception:', e);
-      // Fallback
-      const fallbackUser: UserProfile = {
-        id: `usr_${Date.now()}`,
-        name: fullName,
-        role: 'CITIZEN',
-        email: email,
-        phone: cleanPhone,
-        aadhaarLast4: formData.aadhaarLast4 || '',
-      };
-      setUser(fallbackUser);
+    // A 401 from the API means the session the server sees is gone.
+    const onExpired = () => {
+      void supabase.auth.signOut();
+      setUser(null);
       setRole('CITIZEN');
-      localStorage.setItem('ilrds_active_session', JSON.stringify(fallbackUser));
-      return { success: true };
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('login')) {
+        window.location.href = '/login';
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
     }
 
+    return () => {
+      active = false;
+      listener?.subscription?.unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+      }
+    };
+  }, [applySession]);
+
+  /** Shared by both sign-in entry points; the role check differs. */
+  const signIn = async (email: string, password: string, mustBeOfficer: boolean) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (error || !data?.user) {
+      return { success: false, error: error?.message || 'Invalid email or password.' };
+    }
+
+    const profile = await profileFor(data.user.id, data.user.email);
+    if (!profile) {
+      await supabase.auth.signOut();
+      return { success: false, error: 'No profile is associated with this account.' };
+    }
+    if (mustBeOfficer && profile.role !== 'OFFICER') {
+      // Signed in successfully, but not as somebody who may use this console.
+      await supabase.auth.signOut();
+      return { success: false, error: 'This account is not registered as a revenue officer.' };
+    }
+
+    setUser(profile);
+    setRole(profile.role);
     return { success: true };
   };
 
-  const switchRole = (newRole: UserRole) => {
-    setRole(newRole);
+  const loginCitizen = (email: string, password: string) => signIn(email, password, false);
+  const loginOfficer = (email: string, password: string) => signIn(email, password, true);
+
+  const registerCitizen = async (
+    data: Partial<UserProfile> & { email?: string; password?: string },
+  ) => {
+    if (!data.email || !data.password) {
+      return { success: false, error: 'Email and password are required.' };
+    }
+
+    const { data: created, error } = await supabase.auth.signUp({
+      email: data.email.trim(),
+      password: data.password,
+      options: {
+        // No role here. The database trigger writes CITIZEN regardless of
+        // what this object contains, so sending one would only be misleading.
+        data: {
+          full_name: data.name || '',
+          phone_number: data.phone || '',
+          district: data.district || '',
+          tehsil: data.tehsil || '',
+        },
+      },
+    });
+
+    if (error || !created?.user) {
+      return { success: false, error: error?.message || 'Registration failed.' };
+    }
+
+    if (created.session) {
+      await applySession(created.session);
+    }
+    return { success: true };
   };
 
   const logout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Supabase signout error:', e);
-    }
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('ilrds_active_session');
+    setRole('CITIZEN');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('ilrds_active_session');
+      sessionStorage.removeItem('active_extraction_preview');
+    }
   };
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        role,
-        isLoading,
-        loginCitizen,
-        loginOfficer,
-        registerCitizen,
-        switchRole,
-        logout,
-      }}
+      value={{ user, role, isLoading, loginCitizen, loginOfficer, registerCitizen, logout }}
     >
       {children}
     </AuthContext.Provider>
@@ -345,9 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 }

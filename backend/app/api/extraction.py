@@ -1,14 +1,40 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.services.sarvam_vision import sarvam_service
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from app.services.sarvam_vision import ExtractionError, sarvam_service
 from app.services.validation_engine import validation_engine
+from app.services.reference_check import check_duplicates, check_reference
+from app.core.auth import get_current_user, require_officer
 
 router = APIRouter(prefix="/extraction", tags=["AI Extraction"])
 
 @router.post("/process")
-async def extract_from_document(file: UploadFile = File(...)):
+async def extract_from_document(
+    file: UploadFile = File(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
     file_bytes = await file.read()
-    extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
+    try:
+        extracted_data = await sarvam_service.extract_land_record(file_bytes, file.filename or "record.pdf")
+    except ExtractionError as exc:
+        # A configured key that failed means nothing was read. Say so instead
+        # of substituting fixture data that looks like a reading.
+        return JSONResponse(status_code=502, content={
+            "success": False,
+            "error": "EXTRACTION_FAILED",
+            "reason": exc.reason,
+            "retryable": exc.retryable,
+            "http_status": exc.http_status,
+        })
+
     validation_flags = validation_engine.validate_extracted_record(extracted_data)
+
+    # Cross-verification against the department's own master, and against
+    # what has already been submitted. Both return [] rather than raising if
+    # their sources are unreachable, so extraction still succeeds offline.
+    validation_flags += check_reference(extracted_data)
+    validation_flags += check_duplicates(extracted_data)
 
     # Where the fields below actually came from. sarvam_vision falls back to
     # built-in fixture data whenever the API key is missing, the key is
@@ -31,3 +57,15 @@ async def extract_from_document(file: UploadFile = File(...)):
         "validation_flags": validation_flags,
         "processing_pipeline": "Sarvam Vision OCR -> Normalization -> Business Rules Engine"
     }
+
+
+@router.get("/correction-stats")
+async def correction_stats(officer: Dict[str, Any] = Depends(require_officer)):
+    """
+    What humans have been correcting, and what the extractor is being told
+    about it. Read-only; safe to poll from a dashboard.
+    """
+    from app.services.learning import build_prompt_hints, compute_stats
+
+    stats = compute_stats()
+    return {**stats, "hints_active": build_prompt_hints()}

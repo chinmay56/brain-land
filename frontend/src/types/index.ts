@@ -13,6 +13,9 @@ export interface UserProfile {
   tehsil?: string;
   village?: string;
   state?: string;
+  assignedDistrict?: string;
+  assignedTehsil?: string;
+  assignedVillages?: string[];
   avatarUrl?: string;
 }
 
@@ -45,7 +48,7 @@ export interface ValidationFlag {
   suggestedAction?: string;
 }
 
-// Complete 12 SIH Problem Statement Fields
+// Complete 12 Land Record Fields
 export interface LandRecord {
   id: string;
   applicationNo: string;
@@ -70,9 +73,18 @@ export interface LandRecord {
   submissionDate: string;
   verifiedDate?: string;
   assignedOfficer?: string;
+  assignedDistrict?: string;
+  assignedTehsil?: string;
+  submittedBy?: string;
+  submittedById?: string;
+  createdBy?: string;
   officerRemarks?: string;
   validationFlags: ValidationFlag[];
   documentUrl?: string;
   documentPages?: number;
   supportingDocuments?: string[];
+  lgdDistrictCode?: string;
+  lgdTehsilCode?: string;
+  /** Per-field extractor confidence. Absent on records saved before it was stored. */
+  ocrExtractedData?: Record<string, { value: string; confidence: number; is_flagged?: boolean }>;
 }

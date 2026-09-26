@@ -17,86 +17,86 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
+import { useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import { LandRecord } from '@/types';
 
 export default function OfficerVerifiedHistoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('ALL');
   const [selectedRecordForModal, setSelectedRecordForModal] = useState<LandRecord | null>(null);
+  const [verifiedRecords, setVerifiedRecords] = useState<LandRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // All verified/certified records in the registry
-  const verifiedRecords: LandRecord[] = [
-    ...MOCK_RECORDS.filter(r => r.status === 'VERIFIED'),
-    {
-      id: 'LR-2026-1019',
-      applicationNo: 'APP-MH-2026-00472',
-      documentType: '7/12 Extract (Record of Rights)',
-      ownerName: { value: 'Sunita Devi Deshmukh', confidence: 0.98 },
-      surveyNumber: { value: '131/2', confidence: 0.99 },
-      khasraNumber: { value: 'K-4819', confidence: 0.96 },
-      khataNumber: { value: 'KH-1018', confidence: 0.95 },
-      area: { value: '1.85', confidence: 0.99 },
-      areaUnit: 'Hectares',
-      village: { value: 'Hadapsar', confidence: 0.99 },
-      tehsil: { value: 'Haveli', confidence: 0.99 },
-      district: { value: 'Pune', confidence: 0.99 },
-      state: 'Maharashtra',
-      landClassification: { value: 'Bagayat (Irrigated Garden)', confidence: 0.96 },
-      mutationNumber: { value: '5902', confidence: 0.98 },
-      overallConfidence: 0.98,
-      status: 'VERIFIED',
-      submissionDate: '2026-08-22',
-      assignedOfficer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      validationFlags: [],
-      documentPages: 3,
-    },
-    {
-      id: 'LR-2026-1015',
-      applicationNo: 'APP-MH-2026-00465',
-      documentType: 'Khasra-Khatauni Record',
-      ownerName: { value: 'Anand Shankar Kulkarni', confidence: 0.96 },
-      surveyNumber: { value: '108/1-A', confidence: 0.97 },
-      khasraNumber: { value: 'K-4780', confidence: 0.95 },
-      khataNumber: { value: 'KH-992', confidence: 0.94 },
-      area: { value: '3.20', confidence: 0.98 },
-      areaUnit: 'Hectares',
-      village: { value: 'Hadapsar', confidence: 0.98 },
-      tehsil: { value: 'Haveli', confidence: 0.98 },
-      district: { value: 'Pune', confidence: 0.99 },
-      state: 'Maharashtra',
-      landClassification: { value: 'Jirayat (Dry Land)', confidence: 0.95 },
-      mutationNumber: { value: '5712', confidence: 0.96 },
-      overallConfidence: 0.97,
-      status: 'VERIFIED',
-      submissionDate: '2026-08-19',
-      assignedOfficer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      validationFlags: [],
-      documentPages: 2,
-    },
-    {
-      id: 'LR-2026-1012',
-      applicationNo: 'APP-MH-2026-00440',
-      documentType: 'Mutation Deed (Ferfar)',
-      ownerName: { value: 'Prakash Madhavrao Shinde', confidence: 0.95 },
-      surveyNumber: { value: '94/3', confidence: 0.98 },
-      khasraNumber: { value: 'K-4610', confidence: 0.94 },
-      khataNumber: { value: 'KH-880', confidence: 0.93 },
-      area: { value: '1.40', confidence: 0.97 },
-      areaUnit: 'Hectares',
-      village: { value: 'Khadakwasla', confidence: 0.98 },
-      tehsil: { value: 'Haveli', confidence: 0.98 },
-      district: { value: 'Pune', confidence: 0.99 },
-      state: 'Maharashtra',
-      landClassification: { value: 'Jirayat', confidence: 0.94 },
-      mutationNumber: { value: '5640', confidence: 0.95 },
-      overallConfidence: 0.96,
-      status: 'VERIFIED',
-      submissionDate: '2026-08-15',
-      assignedOfficer: 'Shri Vikramaditya Joshi (SDO Haveli)',
-      validationFlags: [],
-      documentPages: 2,
+  // Fetch verified/certified records dynamically from live Supabase DB
+  useEffect(() => {
+    async function fetchVerifiedHistory() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('land_records')
+          .select('*')
+          .eq('status', 'VERIFIED')
+          .order('updated_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching verified history:', error);
+        } else if (data) {
+          const mapped: LandRecord[] = data.map((row: any) => ({
+            id: row.id,
+            applicationNo: row.application_no || row.id,
+            documentType: row.document_type || '7/12 Extract (Record of Rights)',
+            ownerName: typeof row.owner_name === 'object' && row.owner_name !== null
+              ? row.owner_name
+              : { value: row.owner_name || 'Land Owner', confidence: row.overall_confidence || 0.95 },
+            coOwners: Array.isArray(row.co_owners) ? row.co_owners : [],
+            surveyNumber: typeof row.survey_number === 'object' && row.survey_number !== null
+              ? row.survey_number
+              : { value: row.survey_number || '', confidence: row.overall_confidence || 0.95 },
+            khasraNumber: typeof row.khasra_number === 'object' && row.khasra_number !== null
+              ? row.khasra_number
+              : { value: row.khasra_number || '', confidence: row.overall_confidence || 0.95 },
+            khataNumber: typeof row.khata_number === 'object' && row.khata_number !== null
+              ? row.khata_number
+              : { value: row.khata_number || '', confidence: row.overall_confidence || 0.95 },
+            area: typeof row.area === 'object' && row.area !== null
+              ? row.area
+              : { value: String(row.area || '2.45'), confidence: row.overall_confidence || 0.95 },
+            areaUnit: row.area_unit || 'Hectares',
+            village: typeof row.village === 'object' && row.village !== null
+              ? row.village
+              : { value: row.village || '', confidence: row.overall_confidence || 0.95 },
+            tehsil: typeof row.tehsil === 'object' && row.tehsil !== null
+              ? row.tehsil
+              : { value: row.tehsil || '', confidence: row.overall_confidence || 0.95 },
+            district: typeof row.district === 'object' && row.district !== null
+              ? row.district
+              : { value: row.district || '', confidence: row.overall_confidence || 0.95 },
+            state: row.state || 'Maharashtra',
+            landClassification: typeof row.land_classification === 'object' && row.land_classification !== null
+              ? row.land_classification
+              : { value: row.land_classification || '', confidence: row.overall_confidence || 0.95 },
+            mutationNumber: typeof row.mutation_number === 'object' && row.mutation_number !== null
+              ? row.mutation_number
+              : { value: row.mutation_number || '', confidence: row.overall_confidence || 0.95 },
+            overallConfidence: row.overall_confidence || 0.95,
+            status: 'VERIFIED',
+            submissionDate: row.created_at ? new Date(row.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            assignedOfficer: row.assigned_officer || 'SDO Jurisdiction',
+            validationFlags: row.validation_flags || [],
+            documentPages: row.document_pages || 1,
+            documentUrl: row.document_url || undefined
+          }));
+          setVerifiedRecords(mapped);
+        }
+      } catch (err) {
+        console.error('Verified history fetch exception:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
+    fetchVerifiedHistory();
+  }, []);
 
   const filtered = verifiedRecords.filter(rec => {
     const matchesSearch = 
@@ -237,7 +237,7 @@ export default function OfficerVerifiedHistoryPage() {
                 Official Certified Record of Rights (RoR)
               </h3>
               <p className="text-xs text-stone-500 mt-1">
-                Department of Land Resources Verified &amp; Cryptographically Sealed Database
+                Department of Land Resources Verified &amp; Append-only Sealed Database
               </p>
             </div>
 
